@@ -19,7 +19,7 @@ import type { Logger } from './log.js';
 import type { BridgeRequest, RequestStore } from './store.js';
 import { RESULT_GRACE_MS } from './store.js';
 import type { Evaluation, VerifierClient } from './verifier.js';
-import { buildSessionSetup, evaluateSession } from './verifier.js';
+import { VerifierError, buildSessionSetup, evaluateSession } from './verifier.js';
 
 export class HttpError extends Error {
   constructor(
@@ -44,6 +44,8 @@ export interface BridgeOptions {
   now?: () => number;
   /** Waits between attestation attempts; one more attempt than there are delays. */
   attestRetryDelaysMs?: number[];
+  /** Waits between attempts to read a verifier session after a transient failure. */
+  sessionReadRetryDelaysMs?: number[];
   sleep?: (ms: number) => Promise<void>;
 }
 
@@ -64,6 +66,7 @@ export class Bridge {
   private readonly log: Logger;
   private readonly now: () => number;
   private readonly attestRetryDelaysMs: number[];
+  private readonly sessionReadRetryDelaysMs: number[];
   private readonly sleep: (ms: number) => Promise<void>;
   private readonly checks = new Map<string, { again: boolean }>();
   private idleWaiters: Array<() => void> = [];
@@ -76,6 +79,7 @@ export class Bridge {
     this.log = options.log;
     this.now = options.now ?? Date.now;
     this.attestRetryDelaysMs = options.attestRetryDelaysMs ?? [1_000, 3_000];
+    this.sessionReadRetryDelaysMs = options.sessionReadRetryDelaysMs ?? [500, 2_000];
     this.sleep = options.sleep ?? ((ms) => new Promise((resolve) => setTimeout(resolve, ms)));
   }
 
@@ -150,6 +154,7 @@ export class Bridge {
       createdAt: now,
       callbackToken,
       state: 'pending',
+      recheck: false,
       result: null,
       attestation: null,
     });
@@ -192,10 +197,15 @@ export class Bridge {
     }
   }
 
+  /** Deletes expired requests, and retries callbacks the verifier could not be asked about. */
   sweep(): number {
     const removed = this.store.sweep();
     if (removed > 0) {
       this.log.debug('expired requests deleted', { count: removed });
+    }
+    for (const request of this.store.needingRecheck()) {
+      request.recheck = false;
+      this.scheduleCheck(request.id);
     }
     return removed;
   }
@@ -246,11 +256,19 @@ export class Bridge {
     }
     let session;
     try {
-      session = await this.verifier.getSession(id);
+      session = await this.readSessionWithRetry(id);
     } catch (error) {
-      this.log.warn('could not read the verifier session', { id, error: (error as Error).message });
+      if (error instanceof VerifierError && error.status === 404) {
+        // The verifier no longer has the session: nothing can settle this attempt.
+        request.state = 'failed';
+        this.log.error('the verifier no longer has the session', { id });
+        return;
+      }
+      request.recheck = true;
+      this.log.warn('could not read the verifier session, will try again on the next sweep', { id, error: (error as Error).message });
       return;
     }
+    request.recheck = false;
     const evaluation = evaluateSession(session, this.config.queries[request.query]!);
     if (evaluation.kind === 'undecided') {
       this.log.debug('verifier session still undecided', { id, status: evaluation.status });
@@ -323,6 +341,21 @@ export class Bridge {
       transaction: outcome.transactionId,
       failure: evaluation.kind === 'rejected' ? evaluation.failureType : null,
     });
+  }
+
+  private async readSessionWithRetry(id: string): Promise<Record<string, unknown>> {
+    for (let attempt = 0; ; attempt++) {
+      try {
+        return await this.verifier.getSession(id);
+      } catch (error) {
+        const delay = this.sessionReadRetryDelaysMs[attempt];
+        if (!(error instanceof VerifierError) || !error.retryable || delay === undefined) {
+          throw error;
+        }
+        this.log.debug('verifier session read failed, retrying', { id, attempt: attempt + 1, error: error.message });
+        await this.sleep(delay);
+      }
+    }
   }
 
   private async attestWithRetry(id: string, input: AttestInput): Promise<AttestOutcome> {

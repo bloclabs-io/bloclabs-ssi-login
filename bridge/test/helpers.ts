@@ -146,6 +146,8 @@ export interface MockVerifier {
   sessions: Map<string, StoredSession>;
   /** When set, the next create answers this status with a walt.id style error body. */
   failNextCreate: number | null;
+  /** How many of the next session reads answer 503. */
+  failNextInfo: number;
   setSession(id: string, session: Record<string, unknown>): void;
   /** Posts a session update to the webhook configured for the session, as walt.id does. */
   fireCallback(id: string, event?: string, token?: string): Promise<number>;
@@ -156,7 +158,7 @@ export async function startMockVerifier(): Promise<MockVerifier> {
   const sessions = new Map<string, StoredSession>();
   const createCalls: Array<Record<string, unknown>> = [];
   const infoCalls: string[] = [];
-  const state = { failNextCreate: null as number | null };
+  const state = { failNextCreate: null as number | null, failNextInfo: 0 };
 
   const server = createServer(async (req, res) => {
     const path = req.url ?? '';
@@ -193,6 +195,11 @@ export async function startMockVerifier(): Promise<MockVerifier> {
     if (req.method === 'GET' && info) {
       const id = decodeURIComponent(info[1]!);
       infoCalls.push(id);
+      if (state.failNextInfo > 0) {
+        state.failNextInfo--;
+        json(res, 503, { exception: true, status: 'Service Unavailable', message: 'simulated outage' });
+        return;
+      }
       const stored = sessions.get(id);
       if (!stored) {
         json(res, 404, { exception: true, status: 'Not Found', message: `Verification session not found: ${id}` });
@@ -216,6 +223,12 @@ export async function startMockVerifier(): Promise<MockVerifier> {
     },
     set failNextCreate(value: number | null) {
       state.failNextCreate = value;
+    },
+    get failNextInfo() {
+      return state.failNextInfo;
+    },
+    set failNextInfo(value: number) {
+      state.failNextInfo = value;
     },
     setSession(id, session) {
       const stored = sessions.get(id);
@@ -335,6 +348,7 @@ export async function startBridge(envOverrides: Record<string, string | undefine
     log,
     now: () => clock.now,
     attestRetryDelaysMs: [5, 5],
+    sessionReadRetryDelaysMs: [5, 5],
   });
   const server = createBridgeServer(bridge, config, log);
   await listen(server);

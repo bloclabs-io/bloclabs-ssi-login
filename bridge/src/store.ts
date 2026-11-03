@@ -38,6 +38,8 @@ export interface BridgeRequest {
   /** Bearer token the verifier must present on callbacks for this request. */
   callbackToken: string;
   state: RequestState;
+  /** A callback arrived but the verifier session could not be read: the next sweep tries again. */
+  recheck: boolean;
   result: PresentationResult | null;
   attestation: AttestationRecord | null;
 }
@@ -80,6 +82,11 @@ export class RequestStore {
 
   get size(): number {
     return this.requests.size;
+  }
+
+  /** Pending requests whose last callback could not be acted on. */
+  needingRecheck(): BridgeRequest[] {
+    return [...this.requests.values()].filter((request) => request.state === 'pending' && request.recheck);
   }
 
   /** Deletes requests past their lifetime plus grace, and forgets correlation ids older than a day. */

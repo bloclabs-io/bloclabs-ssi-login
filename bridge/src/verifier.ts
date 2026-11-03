@@ -236,19 +236,21 @@ const STRUCTURAL_CLAIMS = new Set(['iss', 'iat', 'nbf', 'exp', 'cnf', 'vct', 'vc
 /**
  * Only what the query disclosed: the values at the requested DCQL claim paths,
  * or, for a query without `claims`, the credential minus its registered claims.
+ * Each path is projected with its keys and array positions and the projections
+ * are merged, so two selections from the same array keep both fields.
  */
 export function selectClaims(data: Record<string, unknown>, claimsQueries: DcqlClaimsQuery[] | undefined): Record<string, unknown> {
   if (!claimsQueries) {
     return stripStructural(data) as Record<string, unknown>;
   }
-  const out: Record<string, unknown> = {};
+  let out: unknown = {};
   for (const claim of claimsQueries) {
-    const value = resolveClaimPath(data, claim.path);
-    if (value !== undefined) {
-      setClaimPath(out, claim.path, value);
+    const projected = projectClaimPath(data, claim.path);
+    if (projected !== undefined) {
+      out = mergeClaims(out, projected);
     }
   }
-  return out;
+  return isRecord(out) ? out : {};
 }
 
 function stripStructural(value: unknown, top = true): unknown {
@@ -268,56 +270,59 @@ function stripStructural(value: unknown, top = true): unknown {
   return out;
 }
 
-/** OpenID4VP 1.0 §7 claims path pointer: string = key, integer = index, null = every element. */
-export function resolveClaimPath(data: unknown, path: Array<string | number | null>): unknown {
-  let current: unknown[] = [data];
-  let wildcard = false;
-  for (const segment of path) {
-    const next: unknown[] = [];
-    for (const value of current) {
-      if (segment === null) {
-        if (Array.isArray(value)) {
-          wildcard = true;
-          next.push(...value);
-        }
-      } else if (typeof segment === 'string') {
-        if (isRecord(value) && segment in value) {
-          next.push(value[segment]);
-        }
-      } else if (Array.isArray(value) && segment < value.length) {
-        next.push(value[segment]);
-      }
-    }
-    current = next;
+/**
+ * OpenID4VP 1.0 §7 claims path pointer: string = key, integer = index, null = every element.
+ * Returns the part of `value` under `path` with the keys and array positions kept
+ * (a selected index leaves the other positions empty), or undefined when nothing matches.
+ */
+export function projectClaimPath(value: unknown, path: Array<string | number | null>, index = 0): unknown {
+  if (index === path.length) {
+    return value;
   }
-  if (current.length === 0) {
+  const segment = path[index];
+  if (segment === null) {
+    if (!Array.isArray(value)) {
+      return undefined;
+    }
+    const items = value.map((item) => projectClaimPath(item, path, index + 1));
+    return items.some((item) => item !== undefined) ? items : undefined;
+  }
+  if (typeof segment === 'number') {
+    if (!Array.isArray(value) || segment >= value.length) {
+      return undefined;
+    }
+    const item = projectClaimPath(value[segment], path, index + 1);
+    if (item === undefined) {
+      return undefined;
+    }
+    const items: unknown[] = [];
+    items[segment] = item;
+    return items;
+  }
+  if (typeof segment !== 'string' || !isRecord(value) || !(segment in value)) {
     return undefined;
   }
-  return wildcard ? current : current[0];
+  const child = projectClaimPath(value[segment], path, index + 1);
+  return child === undefined ? undefined : { [segment]: child };
 }
 
-function setClaimPath(target: Record<string, unknown>, path: Array<string | number | null>, value: unknown): void {
-  let cursor = target;
-  for (let index = 0; index < path.length; index++) {
-    const segment = path[index];
-    const last = index === path.length - 1;
-    if (typeof segment !== 'string') {
-      // An array index or wildcard: keep the resolved value at this point of the path.
-      return;
+/** Deep-merges two projections: objects by key, arrays by position; a repeated leaf keeps the later value. */
+function mergeClaims(target: unknown, source: unknown): unknown {
+  if (Array.isArray(target) && Array.isArray(source)) {
+    const merged: unknown[] = [];
+    for (let position = 0; position < Math.max(target.length, source.length); position++) {
+      const left = target[position];
+      const right = source[position];
+      merged[position] = left === undefined ? right : right === undefined ? left : mergeClaims(left, right);
     }
-    if (last) {
-      cursor[segment] = value;
-      return;
-    }
-    const nextSegment = path[index + 1];
-    if (typeof nextSegment !== 'string') {
-      cursor[segment] = value;
-      return;
-    }
-    const existing = cursor[segment];
-    if (!isRecord(existing)) {
-      cursor[segment] = {};
-    }
-    cursor = cursor[segment] as Record<string, unknown>;
+    return merged;
   }
+  if (isRecord(target) && isRecord(source)) {
+    const merged: Record<string, unknown> = { ...target };
+    for (const [key, value] of Object.entries(source)) {
+      merged[key] = key in merged ? mergeClaims(merged[key], value) : value;
+    }
+    return merged;
+  }
+  return source;
 }

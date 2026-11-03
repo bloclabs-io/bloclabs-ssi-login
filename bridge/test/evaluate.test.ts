@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 
 import { presentationHash } from '../src/crypto.js';
-import { buildSessionSetup, evaluateSession, holderSubjectId, resolveClaimPath, selectClaims } from '../src/verifier.js';
+import { buildSessionSetup, evaluateSession, holderSubjectId, projectClaimPath, selectClaims } from '../src/verifier.js';
 import { credentialData, failedSession, HOLDER_JWK, QUERIES, SD_JWT_PRESENTATION, successfulSession } from './helpers.js';
 
 const query = QUERIES.default;
@@ -32,23 +32,52 @@ describe('session setup', () => {
 });
 
 describe('claim selection', () => {
-  const data = credentialData({ nationalities: ['GB', 'FR'], degrees: [{ name: 'BSc' }, { name: 'MSc' }] });
+  const data = credentialData({
+    nationalities: ['GB', 'FR'],
+    degrees: [
+      { name: 'BSc', university: 'Example U', year: 2001 },
+      { name: 'MSc', university: 'Other U', year: 2003 },
+    ],
+  });
+  const asJson = (value: unknown) => JSON.parse(JSON.stringify(value)) as unknown;
 
-  it('resolves OpenID4VP claim paths', () => {
-    assert.equal(resolveClaimPath(data, ['given_name']), 'Ada');
-    assert.equal(resolveClaimPath(data, ['address', 'locality']), 'London');
-    assert.equal(resolveClaimPath(data, ['nationalities', 1]), 'FR');
-    assert.deepEqual(resolveClaimPath(data, ['degrees', null, 'name']), ['BSc', 'MSc']);
-    assert.equal(resolveClaimPath(data, ['missing']), undefined);
-    assert.equal(resolveClaimPath(data, ['given_name', 'deeper']), undefined);
+  it('projects OpenID4VP claim paths, keeping keys and array positions', () => {
+    assert.deepEqual(projectClaimPath(data, ['given_name']), { given_name: 'Ada' });
+    assert.deepEqual(projectClaimPath(data, ['address', 'locality']), { address: { locality: 'London' } });
+    assert.deepEqual(asJson(projectClaimPath(data, ['nationalities', 1])), { nationalities: [null, 'FR'] });
+    assert.deepEqual(projectClaimPath(data, ['degrees', null, 'name']), { degrees: [{ name: 'BSc' }, { name: 'MSc' }] });
+    assert.equal(projectClaimPath(data, ['missing']), undefined);
+    assert.equal(projectClaimPath(data, ['given_name', 'deeper']), undefined);
+    assert.equal(projectClaimPath(data, ['nationalities', 5]), undefined);
+    assert.equal(projectClaimPath(data, ['degrees', null, 'missing']), undefined);
   });
 
   it('returns only the requested claims', () => {
     assert.deepEqual(selectClaims(data, [{ path: ['given_name'] }, { path: ['address', 'locality'] }, { path: ['degrees', null, 'name'] }, { path: ['missing'] }]), {
       given_name: 'Ada',
       address: { locality: 'London' },
-      degrees: ['BSc', 'MSc'],
+      degrees: [{ name: 'BSc' }, { name: 'MSc' }],
     });
+  });
+
+  it('keeps every field selected from the same array', () => {
+    const selected = selectClaims(data, [
+      { path: ['degrees', null, 'name'] },
+      { path: ['degrees', null, 'university'] },
+      { path: ['nationalities', 1] },
+      { path: ['nationalities', 0] },
+      { path: ['given_name'] },
+      { path: ['given_name'] },
+    ]);
+    assert.deepEqual(asJson(selected), {
+      degrees: [
+        { name: 'BSc', university: 'Example U' },
+        { name: 'MSc', university: 'Other U' },
+      ],
+      nationalities: ['GB', 'FR'],
+      given_name: 'Ada',
+    });
+    assert.equal(Object.hasOwn((selected['degrees'] as Array<Record<string, unknown>>)[0]!, 'year'), false);
   });
 
   it('returns everything but the registered claims when the query has no claims', () => {

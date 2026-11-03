@@ -312,12 +312,10 @@ describe('presentation requests', () => {
     assert.ok(HOLDER_JWK.x, 'fixture key present');
   });
 
-  it('ignores a callback whose session the verifier no longer has', async () => {
+  it('fails a request whose session the verifier no longer has', async () => {
     const { id } = await open();
-    t.verifier.sessions.get(id)!.session = { id, status: 'SUCCESSFUL' };
     const stored = t.verifier.sessions.get(id)!;
     t.verifier.sessions.delete(id);
-    t.verifier.sessions.set('other', stored);
     const response = await fetch(`${t.url}/v1/verifier-callbacks/${id}`, {
       method: 'POST',
       headers: { Authorization: `Bearer ${((stored.setup['core_flow'] as Record<string, unknown>)['notifications'] as { webhook: { bearer_token: string } }).webhook.bearer_token}` },
@@ -326,7 +324,38 @@ describe('presentation requests', () => {
     await response.text();
     await t.bridge.idle();
     assert.equal(t.firefly.invokes.length, 0);
-    assert.equal((await t.call('GET', `/v1/presentation-requests/${id}/result`)).status, 409, 'still pending: a later callback can settle it');
+    assert.deepEqual((await t.call('GET', `/v1/presentation-requests/${id}/result`)).body, { error: 'failed' });
+  });
+
+  it('retries a transient session read before giving up on the callback', async () => {
+    const { id } = await open();
+    t.verifier.setSession(id, successfulSession(id));
+    t.verifier.failNextInfo = 2;
+    const reads = t.verifier.infoCalls.length;
+    await t.verifier.fireCallback(id);
+    await t.bridge.idle();
+    assert.equal(t.verifier.infoCalls.length - reads, 3, 'two failures, then the read that settles it');
+    assert.equal(t.firefly.invokes.length, 1);
+    assert.equal((await t.call('GET', `/v1/presentation-requests/${id}/result`)).status, 200);
+  });
+
+  it('rechecks on the next sweep when the verifier stayed unreachable', async () => {
+    const { id } = await open();
+    t.verifier.setSession(id, successfulSession(id));
+    t.verifier.failNextInfo = 10;
+    await t.verifier.fireCallback(id);
+    await t.bridge.idle();
+    assert.equal(t.firefly.invokes.length, 0);
+    assert.equal((await t.call('GET', `/v1/presentation-requests/${id}/result`)).status, 409, 'still pending');
+
+    t.verifier.failNextInfo = 0;
+    t.bridge.sweep();
+    await t.bridge.idle();
+    assert.equal(t.firefly.invokes.length, 1, 'the sweep retried the callback');
+    assert.equal((await t.call('GET', `/v1/presentation-requests/${id}/result`)).status, 200);
+    t.bridge.sweep();
+    await t.bridge.idle();
+    assert.equal(t.firefly.invokes.length, 1, 'a settled request is not rechecked');
   });
 });
 
