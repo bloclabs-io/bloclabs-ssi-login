@@ -1,0 +1,68 @@
+<?php
+/**
+ * ClientIp ranges, wallet URL schemes and the subject commitment.
+ *
+ * @package BlocLabs\SsiLogin
+ */
+
+declare(strict_types=1);
+
+namespace BlocLabs\SsiLogin\Tests\Unit;
+
+use BlocLabs\SsiLogin\FireFly\Attestation;
+use BlocLabs\SsiLogin\Support\ClientIp;
+use BlocLabs\SsiLogin\Verifier\PresentationOffer;
+use BlocLabs\SsiLogin\Verifier\VerifierException;
+use PHPUnit\Framework\Attributes\DataProvider;
+use PHPUnit\Framework\TestCase;
+
+final class SupportTest extends TestCase {
+
+	public static function ranges(): array {
+		return array(
+			'v4 in /24'       => array( '172.18.0.7', '172.18.0.0/24', true ),
+			'v4 out of /24'   => array( '172.18.1.7', '172.18.0.0/24', false ),
+			'v4 /12 edge'     => array( '172.31.255.255', '172.16.0.0/12', true ),
+			'v4 exact'        => array( '10.0.0.5', '10.0.0.5', true ),
+			'v4 exact miss'   => array( '10.0.0.6', '10.0.0.5', false ),
+			'v6 in /64'       => array( '2001:db8::1', '2001:db8::/64', true ),
+			'v6 out'          => array( '2001:db9::1', '2001:db8::/64', false ),
+			'family mismatch' => array( '10.0.0.1', '::/0', false ),
+			'bad prefix'      => array( '10.0.0.1', '10.0.0.0/33', false ),
+			'garbage'         => array( 'not-an-ip', '10.0.0.0/8', false ),
+		);
+	}
+
+	#[DataProvider( 'ranges' )]
+	public function test_in_range( string $ip, string $range, bool $expected ): void {
+		$this->assertSame( $expected, ClientIp::in_range( $ip, $range ) );
+	}
+
+	public function test_wallet_urls(): void {
+		$this->assertTrue( PresentationOffer::is_wallet_url( 'openid4vp://?client_id=x509_san_dns:example.com&request_uri=https%3A%2F%2Fv.example%2Fr%2F1' ) );
+		$this->assertTrue( PresentationOffer::is_wallet_url( 'https://wallet.example/authorize?request_uri=x' ) );
+		$this->assertFalse( PresentationOffer::is_wallet_url( 'javascript:alert(1)' ) );
+		$this->assertFalse( PresentationOffer::is_wallet_url( 'data:text/html,hi' ) );
+		$this->assertFalse( PresentationOffer::is_wallet_url( 'http://wallet.example/' ) );
+	}
+
+	public function test_unusable_offer_is_refused(): void {
+		$this->expectException( VerifierException::class );
+		PresentationOffer::from_array(
+			array(
+				'id'         => 'r1',
+				'wallet_url' => 'javascript:alert(1)',
+			)
+		);
+	}
+
+	public function test_subject_commitment_is_salted_per_attempt(): void {
+		$did = 'did:key:z6MkhaXgBZDvotDkL5257faiztiGiC2QtKLGpbnnEGta2doK';
+		$a   = Attestation::subject_commitment( str_repeat( 'ab', 32 ), $did );
+		$b   = Attestation::subject_commitment( str_repeat( 'cd', 32 ), $did );
+
+		$this->assertMatchesRegularExpression( '/^[0-9a-f]{64}$/', $a );
+		$this->assertNotSame( $a, $b, 'the same holder is unlinkable across attempts' );
+		$this->assertSame( $a, Attestation::subject_commitment( str_repeat( 'AB', 32 ), $did ), 'correlation id case does not matter' );
+	}
+}

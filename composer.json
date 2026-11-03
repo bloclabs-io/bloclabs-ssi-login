@@ -1,0 +1,38 @@
+{
+	"name": "bloclabs/ssi-login",
+	"description": "Passwordless WordPress login with Verifiable Credentials (OpenID4VP), with every login decision attested on chain through Hyperledger FireFly.",
+	"type": "wordpress-plugin",
+	"license": "GPL-2.0-or-later",
+	"keywords": ["wordpress", "ssi", "verifiable-credentials", "openid4vp", "hyperledger-firefly", "did", "passwordless"],
+	"homepage": "https://github.com/bloclabs-io/bloclabs-ssi-login",
+	"require": {
+		"php": ">=8.1"
+	},
+	"require-dev": {
+		"phpunit/phpunit": "^10.5",
+		"wp-coding-standards/wpcs": "^3.1",
+		"phpcompatibility/phpcompatibility-wp": "^2.1",
+		"dealerdirect/phpcodesniffer-composer-installer": "^1.0"
+	},
+	"autoload": {
+		"psr-4": {
+			"BlocLabs\\SsiLogin\\": "src/"
+		}
+	},
+	"autoload-dev": {
+		"psr-4": {
+			"BlocLabs\\SsiLogin\\Tests\\": "tests/"
+		}
+	},
+	"scripts": {
+		"lint": "find . -name '*.php' -not -path './vendor/*' -print0 | xargs -0 -n1 php -l",
+		"phpcs": "phpcs",
+		"test": "phpunit"
+	},
+	"config": {
+		"allow-plugins": {
+			"dealerdirect/phpcodesniffer-composer-installer": true
+		},
+		"sort-packages": true
+	}
+}

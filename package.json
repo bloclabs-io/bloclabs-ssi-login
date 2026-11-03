@@ -1,0 +1,12 @@
+{
+  "name": "bloclabs-ssi-login",
+  "private": true,
+  "description": "Front-end vendoring for the blocLabs SSI Login WordPress plugin.",
+  "license": "GPL-2.0-or-later",
+  "scripts": {
+    "vendor": "node -e \"require('fs').copyFileSync(require.resolve('qrcode-generator/qrcode.js'), 'assets/vendor/qrcode.js')\""
+  },
+  "devDependencies": {
+    "qrcode-generator": "1.4.4"
+  }
+}
