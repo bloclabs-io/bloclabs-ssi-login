@@ -37,8 +37,14 @@ final class ContractEventDecoder implements EventDecoder {
 		}
 
 		// Only the configured listener is trusted: it is bound to the attestor contract's address.
-		$listener = $this->settings->string( 'firefly_listener_id' );
-		if ( '' === $listener || ( $chain_event['listener'] ?? null ) !== $listener ) {
+		$listener = strtolower( $this->settings->string( 'firefly_listener_id' ) );
+		if ( '' === $listener || strtolower( (string) ( $chain_event['listener'] ?? '' ) ) !== $listener ) {
+			return null;
+		}
+
+		// A log dropped by a chain reorganisation is not a decision. Ignore it (no rejection either):
+		// if the transaction is mined again, its new log arrives as a new event.
+		if ( true === ( $chain_event['info']['removed'] ?? false ) ) {
 			return null;
 		}
 

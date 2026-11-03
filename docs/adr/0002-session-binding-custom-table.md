@@ -29,4 +29,5 @@ everyone (user 0, no session token).
 
 - `wp_options` gains two small rows (settings, subject key) and one autoloaded schema version.
 - Exactly-once semantics for attestations and completion.
-- Multisite: one table per site, created on activation (network activation needs a per-site loop, on the roadmap).
+- Multisite: one table per site, created when the plugin is activated on that site. Network activation is refused
+  until it sets up every site; uninstall removes every site's tables.

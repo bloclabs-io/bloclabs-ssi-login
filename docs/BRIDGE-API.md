@@ -3,8 +3,11 @@
 The bridge is a small service next to an OpenID4VP verifier. It is the only component that touches credentials.
 WordPress calls it twice per login; wallets call its OpenID4VP endpoints; it calls FireFly once per decision.
 
-Authentication between WordPress and the bridge: a static `Authorization` header (setting
-`verifier_auth_header`) over a private network, or mTLS at a proxy.
+Authentication between WordPress and the bridge is **required**: a static `Authorization` header (setting
+`verifier_auth_header`, best pinned as `BLOCLABS_SSI_VERIFIER_AUTH_HEADER`) over a private network. WordPress
+refuses to start a login without it. Serve these two routes on the private network only; the wallet-facing host
+exposes nothing but the OpenID4VP endpoints, because the result route returns claims and its id appears in the
+QR code.
 
 ## `POST /v1/presentation-requests`
 
@@ -58,7 +61,9 @@ Response `200`:
 - `presentation_hash`: lowercase hex SHA-256 of the presentation exactly as received (the `vp_token` value).
 - `claims`: only what the query disclosed.
 
-Answer `409` while the request is undecided, `404` once the result has expired. Keep results for at least the
+Answer `409` while the request is undecided, `404` once the result has expired. WordPress treats any failure here
+as transient: the attempt stays verified and the browser retries `/complete` a few times, so the bridge may attest a
+moment before it serves the result. Keep results for at least the
 attempt lifetime plus a minute, then delete them.
 
 ## What the bridge must do on each wallet response

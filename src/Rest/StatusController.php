@@ -49,10 +49,11 @@ final class StatusController extends BrowserController {
 			return $attempt;
 		}
 
-		if ( AttemptStatus::Pending === $attempt->status ) {
+		if ( ! $attempt->status->is_terminal() ) {
 			if ( $attempt->is_expired() ) {
+				// Pending or verified, an attempt past its lifetime can no longer complete.
 				$this->attempts->transition( $attempt, AttemptStatus::Expired );
-			} else {
+			} elseif ( AttemptStatus::Pending === $attempt->status ) {
 				$this->reconciler->reconcile( $attempt );
 			}
 			// A webhook may have settled it meanwhile, too.

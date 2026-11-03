@@ -25,8 +25,11 @@ process), or through a public REST webhook that FireFly POSTs to?
    `GET /events/{id}?fetchreference=true` and only then changes state. A leaked secret lets an attacker ring the bell,
    not forge a login.
 2. **Polling as the safety net.** When a pending attempt is older than `poll_fallback_after` (15 s), or when the site
-   runs in *Polling only* mode, the status endpoint queries FireFly's blockchain events for the listener, at most
-   once every 3 seconds per attempt. Missed webhooks therefore delay a login; they never lose it.
+   runs in *Polling only* mode, the status endpoint pages through every attestation since the attempt started
+   (newest first, 50 per page, up to 1,000), at most once every 3 seconds per attempt. Once its retries are used up,
+   FireFly moves past a webhook delivery that never got a 2xx, so this is the recovery path: missed webhooks delay a
+   login, they do not lose it. An event from our listener that fails to decode fires
+   `bloclabs_ssi_undecodable_event`, because polling could not decode it either.
 3. **No daemon in 0.1.** Both paths go through the same `AttestationProcessor`, so a WP-CLI WebSocket consumer can be
    added later for deployments that need it.
 

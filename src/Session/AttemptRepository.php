@@ -114,27 +114,21 @@ final class AttemptRepository {
 		return 1 === $updated;
 	}
 
-	public function count_recent_pending_for_ip( string $ip_hash, int $window ): int {
+	/**
+	 * Attempts opened from one client in the window, whatever became of them:
+	 * failed and expired attempts cost a verifier call and a row too.
+	 */
+	public function count_recent_for_ip( string $ip_hash, int $window ): int {
 		global $wpdb;
 		$table = Schema::attempts_table();
 
 		return (int) $wpdb->get_var(
 			$wpdb->prepare(
-				"SELECT COUNT(*) FROM {$table} WHERE ip_hash = %s AND status = %s AND created_at >= %s", // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared
+				"SELECT COUNT(*) FROM {$table} WHERE ip_hash = %s AND created_at >= %s", // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared
 				$ip_hash,
-				AttemptStatus::Pending->value,
 				gmdate( 'Y-m-d H:i:s', time() - $window )
 			)
 		);
-	}
-
-	public function oldest_pending_created_at(): ?int {
-		global $wpdb;
-		$table = Schema::attempts_table();
-		$value = $wpdb->get_var(
-			$wpdb->prepare( "SELECT MIN(created_at) FROM {$table} WHERE status = %s", AttemptStatus::Pending->value ) // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared
-		);
-		return null === $value ? null : (int) strtotime( $value . ' UTC' );
 	}
 
 	/**

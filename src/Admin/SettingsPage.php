@@ -48,7 +48,7 @@ final class SettingsPage {
 			'attempt_ttl'          => array( __( 'Request lifetime (seconds)', 'bloclabs-ssi-login' ), 'number', 'general' ),
 			'client_ip_header'     => array( __( 'Client IP header', 'bloclabs-ssi-login' ), 'text', 'general', __( 'e.g. HTTP_CF_CONNECTING_IP. Leave empty unless the site is reachable only through that proxy.', 'bloclabs-ssi-login' ) ),
 			'verifier_url'         => array( __( 'Verifier bridge URL', 'bloclabs-ssi-login' ), 'url', 'verifier' ),
-			'verifier_auth_header' => array( __( 'Verifier Authorization header', 'bloclabs-ssi-login' ), 'secret', 'verifier' ),
+			'verifier_auth_header' => array( __( 'Verifier Authorization header', 'bloclabs-ssi-login' ), 'secret', 'verifier', __( 'Required: credential login stays off without it. Prefer BLOCLABS_SSI_VERIFIER_AUTH_HEADER in wp-config.php.', 'bloclabs-ssi-login' ) ),
 			'credential_query'     => array( __( 'Credential query name', 'bloclabs-ssi-login' ), 'text', 'verifier', __( 'A DCQL query defined in the verifier.', 'bloclabs-ssi-login' ) ),
 			'firefly_url'          => array( __( 'FireFly core URL', 'bloclabs-ssi-login' ), 'url', 'firefly', __( 'A private address. FireFly core has no authentication of its own.', 'bloclabs-ssi-login' ) ),
 			'firefly_namespace'    => array( __( 'Namespace', 'bloclabs-ssi-login' ), 'text', 'firefly' ),
@@ -57,7 +57,6 @@ final class SettingsPage {
 			'event_mode'           => array( __( 'Event delivery', 'bloclabs-ssi-login' ), 'mode', 'firefly' ),
 			'webhook_secret'       => array( __( 'Webhook secret', 'bloclabs-ssi-login' ), 'secret', 'firefly', __( 'At least 32 characters. Prefer BLOCLABS_SSI_WEBHOOK_SECRET in wp-config.php.', 'bloclabs-ssi-login' ) ),
 			'webhook_allowed_ips'  => array( __( 'Webhook source IPs', 'bloclabs-ssi-login' ), 'text', 'firefly', __( 'Optional. IPs or CIDR ranges, comma separated.', 'bloclabs-ssi-login' ) ),
-			'confirm_events'       => array( __( 'Re-read delivered events from FireFly', 'bloclabs-ssi-login' ), 'checkbox', 'firefly', __( 'Recommended. Turn off only if WordPress cannot reach FireFly.', 'bloclabs-ssi-login' ) ),
 		);
 	}
 
@@ -106,7 +105,8 @@ final class SettingsPage {
 	public function sanitize( $input ): array {
 		$input  = is_array( $input ) ? wp_unslash( $input ) : array();
 		$stored = (array) get_option( Settings::OPTION, array() );
-		$out    = array();
+		// Start from what is stored (known keys only), so settings this form does not show survive a save.
+		$out = array_intersect_key( $stored, Settings::defaults() );
 
 		foreach ( $this->fields() as $key => $field ) {
 			if ( $this->settings->is_pinned( $key ) ) {

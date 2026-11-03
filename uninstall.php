@@ -18,7 +18,26 @@ if ( defined( 'BLOCLABS_SSI_KEEP_DATA' ) && BLOCLABS_SSI_KEEP_DATA ) {
 
 require_once __DIR__ . '/src/Database/Schema.php';
 
-BlocLabs\SsiLogin\Database\Schema::drop();
-delete_option( 'bloclabs_ssi_settings' );
-delete_option( 'bloclabs_ssi_subject_key' );
-wp_clear_scheduled_hook( 'bloclabs_ssi_purge' );
+$bloclabs_ssi_cleanup = static function (): void {
+	BlocLabs\SsiLogin\Database\Schema::drop();
+	delete_option( 'bloclabs_ssi_settings' );
+	delete_option( 'bloclabs_ssi_subject_key' );
+	wp_clear_scheduled_hook( 'bloclabs_ssi_purge' );
+};
+
+// Each site has its own tables and options.
+if ( is_multisite() ) {
+	$bloclabs_ssi_sites = get_sites(
+		array(
+			'fields' => 'ids',
+			'number' => 0,
+		)
+	);
+	foreach ( $bloclabs_ssi_sites as $bloclabs_ssi_site ) {
+		switch_to_blog( (int) $bloclabs_ssi_site );
+		$bloclabs_ssi_cleanup();
+		restore_current_blog();
+	}
+} else {
+	$bloclabs_ssi_cleanup();
+}

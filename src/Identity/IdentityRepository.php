@@ -2,9 +2,11 @@
 /**
  * Links credential subjects to WordPress users.
  *
- * Subjects are stored as HMAC-SHA256(subject_key, subject_id): a database dump
- * does not list which DIDs hold accounts here. A short label is kept for the
- * user's profile screen ("did:key:z6Mk…a4Qx").
+ * Subjects are stored as HMAC-SHA256(subject_key, subject_id), so the table
+ * does not list which DIDs hold accounts here. With BLOCLABS_SSI_SUBJECT_KEY in
+ * wp-config.php, a full database dump cannot test guessed DIDs either; with the
+ * stored fallback key, it can. A short label is kept for the
+ * user's profile screen ("did:key #3f9a1c2e"), which does not reveal the subject.
  *
  * phpcs:disable WordPress.DB.DirectDatabaseQuery -- custom table; lookups are by unique key.
  *
@@ -60,7 +62,12 @@ final class IdentityRepository {
 		$wpdb->delete( Schema::identities_table(), array( 'user_id' => $user_id ) );
 	}
 
+	/**
+	 * An opaque label for the profile screen: the DID method (or "credential") and
+	 * a short hash. It never contains the identifier itself.
+	 */
 	public static function label( string $subject_id ): string {
-		return strlen( $subject_id ) > 28 ? substr( $subject_id, 0, 18 ) . '…' . substr( $subject_id, -6 ) : $subject_id;
+		$kind = 1 === preg_match( '/^(did:[a-z0-9]+):/', $subject_id, $m ) ? $m[1] : 'credential';
+		return $kind . ' #' . substr( hash( 'sha256', $subject_id ), 0, 8 );
 	}
 }

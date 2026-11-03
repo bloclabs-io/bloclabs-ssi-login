@@ -16,8 +16,7 @@ use BlocLabs\SsiLogin\Session\BrowserBinding;
 
 abstract class BrowserController {
 
-	public const NONCE_ACTION = 'bloclabs_ssi';
-	public const NONCE_HEADER = 'X-Bloclabs-Ssi-Nonce';
+	public const TOKEN_HEADER = 'X-Bloclabs-Ssi-Token';
 
 	public function __construct(
 		protected readonly Settings $settings,
@@ -28,11 +27,11 @@ abstract class BrowserController {
 	abstract public function register_routes(): void;
 
 	/**
-	 * Plugin enabled and the request carries the login page's nonce.
+	 * Plugin enabled and the request carries the login page's token.
 	 *
-	 * The nonce is a cross-site request check only: for logged-out visitors it
-	 * is shared by everyone (see BrowserBinding). The cookie binding is what
-	 * ties an attempt to a browser.
+	 * The token is a cross-site request check only: it is the same for every
+	 * visitor (see PageToken). The cookie binding is what ties an attempt to a
+	 * browser.
 	 *
 	 * @return true|\WP_Error
 	 */
@@ -40,8 +39,7 @@ abstract class BrowserController {
 		if ( ! $this->settings->enabled() ) {
 			return new \WP_Error( 'bloclabs_ssi_disabled', __( 'Credential login is disabled.', 'bloclabs-ssi-login' ), array( 'status' => 404 ) );
 		}
-		$nonce = (string) $request->get_header( self::NONCE_HEADER );
-		if ( ! wp_verify_nonce( $nonce, self::NONCE_ACTION ) ) {
+		if ( ! PageToken::verify( (string) $request->get_header( self::TOKEN_HEADER ) ) ) {
 			return new \WP_Error( 'bloclabs_ssi_nonce', __( 'Please reload the login page and try again.', 'bloclabs-ssi-login' ), array( 'status' => 403 ) );
 		}
 		return true;

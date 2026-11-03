@@ -40,7 +40,7 @@ final class FireFlyClient {
 	 *
 	 * @return list<array<string, mixed>>
 	 */
-	public function blockchain_events( string $listener_id, string $name, int $since, int $limit = 50 ): array {
+	public function blockchain_events( string $listener_id, string $name, int $since, int $limit = 50, int $skip = 0 ): array {
 		return $this->get(
 			'blockchainevents',
 			array(
@@ -50,6 +50,7 @@ final class FireFlyClient {
 				'timestamp' => '>=' . gmdate( 'Y-m-d\TH:i:s\Z', $since ),
 				'sort'      => '-timestamp',
 				'limit'     => (string) $limit,
+				'skip'      => (string) $skip,
 			)
 		);
 	}

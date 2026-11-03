@@ -117,16 +117,18 @@ See [SECURITY-MODEL.md](SECURITY-MODEL.md) for threats and mitigations.
 | `bloclabs_ssi_event_decoder` | filter | Decode a different contract event or layout |
 | `bloclabs_ssi_resolve_user` | filter | Last word on which user a subject becomes |
 | `bloclabs_ssi_provision_user_data` | filter | Shape (or refuse) accounts created for new subjects |
-| `bloclabs_ssi_allow_login` | filter | Veto a login after the credential checked out |
+| `bloclabs_ssi_allow_login` | filter | Veto a login after the credential checked out; anything but `true` refuses |
 | `bloclabs_ssi_wallet_url_schemes` | filter | Allowed wallet URL schemes (default `openid4vp`, `https`) |
 | `bloclabs_ssi_client_ip` | filter | Visitor IP behind unusual proxies |
 | `bloclabs_ssi_login_template` | filter | Replace the login block markup |
 | `bloclabs_ssi_attested` | action | An attestation settled an attempt |
 | `bloclabs_ssi_commitment_mismatch` | action | The bridge's answer contradicted the chain: alert on this |
+| `bloclabs_ssi_undecodable_event` | action | An event from the attestor listener did not decode: contract and decoder disagree |
 | `bloclabs_ssi_booted` | action | Add-ons get the composition root |
 
 Every setting can be pinned in `wp-config.php` as `BLOCLABS_SSI_<KEY>`. Secrets (`WEBHOOK_SECRET`,
-`FIREFLY_AUTH_HEADER`, `VERIFIER_AUTH_HEADER`) should only be set that way.
+`FIREFLY_AUTH_HEADER`, `VERIFIER_AUTH_HEADER` and `SUBJECT_KEY`) should only be set that way. The settings option is
+created with autoload off. `VERIFIER_AUTH_HEADER` is required: without it credential login stays unavailable.
 
 ## Deployment topologies
 

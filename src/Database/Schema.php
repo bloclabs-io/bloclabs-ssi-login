@@ -56,7 +56,7 @@ final class Schema {
   status varchar(16) NOT NULL DEFAULT 'pending',
   verifier_ref varchar(191) DEFAULT NULL,
   ip_hash char(64) DEFAULT NULL,
-  redirect_to text DEFAULT NULL,
+  redirect_to text,
   firefly_event_id varchar(64) DEFAULT NULL,
   tx_ref varchar(191) DEFAULT NULL,
   subject_commitment char(64) DEFAULT NULL,
@@ -90,7 +90,15 @@ final class Schema {
 ) {$charset};"
 		);
 
-		update_option( self::VERSION_OPTION, self::VERSION, true );
+		// Record the version only when both tables exist, so a failed CREATE is retried on the next load.
+		if ( self::table_exists( $attempts ) && self::table_exists( $ids ) ) {
+			update_option( self::VERSION_OPTION, self::VERSION, true );
+		}
+	}
+
+	private static function table_exists( string $table ): bool {
+		global $wpdb;
+		return $table === $wpdb->get_var( $wpdb->prepare( 'SHOW TABLES LIKE %s', $wpdb->esc_like( $table ) ) ); // phpcs:ignore WordPress.DB.DirectDatabaseQuery
 	}
 
 	/**

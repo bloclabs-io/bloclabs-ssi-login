@@ -21,6 +21,9 @@ use BlocLabs\SsiLogin\Session\AttemptRepository;
 final class EventReconciler {
 
 	private const CHECK_INTERVAL = 3;
+	private const PAGE_SIZE      = 50;
+	// 20 pages: 1,000 attestations within one attempt's lifetime is far beyond a single site's login rate.
+	private const MAX_PAGES = 20;
 
 	public function __construct(
 		private readonly Settings $settings,
@@ -47,29 +50,38 @@ final class EventReconciler {
 			return 0;
 		}
 
-		try {
-			$events = $this->firefly->blockchain_events(
-				$this->settings->string( 'firefly_listener_id' ),
-				$this->settings->string( 'attestation_event' ),
-				$attempt->created_at - 5
-			);
-		} catch ( FireFlyException $e ) {
-			return 0; // The browser keeps polling; the next check retries.
-		}
-
 		$applied = 0;
-		foreach ( $events as $chain_event ) {
-			if ( ! is_array( $chain_event ) ) {
-				continue;
+		for ( $page = 0; $page < self::MAX_PAGES; $page++ ) {
+			try {
+				// Every attestation since this attempt started, newest first, a page at a time.
+				$events = $this->firefly->blockchain_events(
+					$this->settings->string( 'firefly_listener_id' ),
+					$this->settings->string( 'attestation_event' ),
+					$attempt->created_at - 5,
+					self::PAGE_SIZE,
+					$page * self::PAGE_SIZE
+				);
+			} catch ( FireFlyException $e ) {
+				return $applied; // The browser keeps polling; the next check retries.
 			}
-			// Same shape as a webhook delivery, so the decoder is shared.
-			$event = array(
-				'id'              => 'poll:' . ( $chain_event['id'] ?? '' ),
-				'type'            => 'blockchain_event_received',
-				'blockchainEvent' => $chain_event,
-			);
-			if ( AttestationProcessor::APPLIED === $this->processor->apply( $event ) ) {
-				++$applied;
+
+			foreach ( $events as $chain_event ) {
+				if ( ! is_array( $chain_event ) ) {
+					continue;
+				}
+				// Same shape as a webhook delivery, so the decoder is shared. Settling other attempts on the way is fine.
+				$event = array(
+					'id'              => 'poll:' . ( $chain_event['id'] ?? '' ),
+					'type'            => 'blockchain_event_received',
+					'blockchainEvent' => $chain_event,
+				);
+				if ( AttestationProcessor::APPLIED === $this->processor->apply( $event ) ) {
+					++$applied;
+				}
+			}
+
+			if ( count( $events ) < self::PAGE_SIZE ) {
+				break;
 			}
 		}
 		return $applied;

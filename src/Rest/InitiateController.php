@@ -54,9 +54,19 @@ final class InitiateController extends BrowserController {
 	 * @return \WP_REST_Response|\WP_Error
 	 */
 	public function handle( \WP_REST_Request $request ) {
+		$unavailable = new \WP_Error( 'bloclabs_ssi_unavailable', __( 'Credential login is unavailable right now.', 'bloclabs-ssi-login' ), array( 'status' => 503 ) );
+
+		// The bridge's result route returns claims: never talk to a bridge that does not authenticate us.
+		if ( '' === $this->settings->string( 'verifier_auth_header' ) ) {
+			return $unavailable;
+		}
+
+		// No usable client address means no rate limit, so no attempt.
 		$ip_hash = ClientIp::hash( $this->settings );
-		if ( null !== $ip_hash
-			&& $this->attempts->count_recent_pending_for_ip( $ip_hash, self::RATE_WINDOW ) >= $this->settings->int( 'max_pending_per_ip' ) ) {
+		if ( null === $ip_hash ) {
+			return $unavailable;
+		}
+		if ( $this->attempts->count_recent_for_ip( $ip_hash, self::RATE_WINDOW ) >= $this->settings->int( 'max_pending_per_ip' ) ) {
 			return new \WP_Error( 'bloclabs_ssi_rate_limited', __( 'Too many login requests. Please wait a few minutes.', 'bloclabs-ssi-login' ), array( 'status' => 429 ) );
 		}
 
@@ -64,7 +74,13 @@ final class InitiateController extends BrowserController {
 		$redirect = (string) $request->get_param( 'redirect_to' );
 		$redirect = '' !== $redirect ? wp_validate_redirect( $redirect, '' ) : '';
 
-		$attempt = $this->attempts->open( $this->binding->issue(), $ip_hash, $ttl, '' !== $redirect ? $redirect : null );
+		try {
+			$binding = $this->binding->issue();
+		} catch ( \RuntimeException $e ) {
+			return $unavailable;
+		}
+
+		$attempt = $this->attempts->open( $binding, $ip_hash, $ttl, '' !== $redirect ? $redirect : null );
 
 		try {
 			$offer = $this->verifier->create_request(
@@ -77,7 +93,7 @@ final class InitiateController extends BrowserController {
 			);
 		} catch ( VerifierException $e ) {
 			$this->attempts->transition( $attempt, AttemptStatus::Failed );
-			return new \WP_Error( 'bloclabs_ssi_verifier', __( 'Credential login is unavailable right now.', 'bloclabs-ssi-login' ), array( 'status' => 503 ) );
+			return $unavailable;
 		}
 
 		$this->attempts->set_verifier_ref( $attempt, $offer->verifier_ref );

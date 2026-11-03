@@ -3,10 +3,9 @@
  * Applies FireFly events to login attempts. Shared by the webhook receiver
  * and the polling fallback, so both paths enforce the same rules.
  *
- * The webhook body is treated as a doorbell, not as evidence: with
- * `confirm_events` on (the default) the event is re-read from FireFly by ID
- * before anything changes. A leaked webhook secret then lets an attacker ring
- * the bell, not forge an attestation.
+ * The webhook body is treated as a doorbell, never as evidence: the event is
+ * always re-read from FireFly by id before anything changes. A leaked webhook
+ * secret lets an attacker ring the bell, not forge an attestation.
  *
  * @package BlocLabs\SsiLogin
  */
@@ -44,17 +43,13 @@ final class AttestationProcessor {
 			return self::IGNORED;
 		}
 
-		if ( $this->settings->bool( 'confirm_events' ) ) {
-			try {
-				$event = $this->firefly->event( $event_id );
-			} catch ( FireFlyException $e ) {
-				if ( $e->is_not_found() ) {
-					return self::IGNORED; // Not an event FireFly knows: forged or from another node.
-				}
-				throw $e;
+		try {
+			$event = $this->firefly->event( $event_id );
+		} catch ( FireFlyException $e ) {
+			if ( $e->is_not_found() ) {
+				return self::IGNORED; // Not an event FireFly knows: forged, or from another node.
 			}
-		} else {
-			$event = $delivered;
+			throw $e;
 		}
 
 		return $this->apply( $event );
@@ -68,6 +63,7 @@ final class AttestationProcessor {
 	public function apply( array $event ): string {
 		$attestation = $this->decoder->decode( $event );
 		if ( null === $attestation ) {
+			$this->report_undecodable( $event );
 			return self::IGNORED;
 		}
 
@@ -108,5 +104,31 @@ final class AttestationProcessor {
 		}
 
 		return $changed ? self::APPLIED : self::DUPLICATE;
+	}
+
+	/**
+	 * An event from our own listener that does not decode means the contract and
+	 * the decoder disagree. Polling would miss it too, so make it visible.
+	 *
+	 * @param array<string, mixed> $event
+	 */
+	private function report_undecodable( array $event ): void {
+		$chain_event = is_array( $event['blockchainEvent'] ?? null ) ? $event['blockchainEvent'] : array();
+		$listener    = strtolower( $this->settings->string( 'firefly_listener_id' ) );
+		$removed     = true === ( $chain_event['info']['removed'] ?? false );
+		if ( '' === $listener || $removed || strtolower( (string) ( $chain_event['listener'] ?? '' ) ) !== $listener
+			|| $this->settings->string( 'attestation_event' ) !== ( $chain_event['name'] ?? null ) ) {
+			return;
+		}
+
+		/**
+		 * An attestation event from the configured listener could not be decoded.
+		 *
+		 * @param array<string, mixed> $event
+		 */
+		do_action( 'bloclabs_ssi_undecodable_event', $event );
+		if ( defined( 'WP_DEBUG' ) && WP_DEBUG ) {
+			error_log( 'bloclabs-ssi-login: undecodable LoginAttested event ' . (string) ( $event['id'] ?? '?' ) ); // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log
+		}
 	}
 }

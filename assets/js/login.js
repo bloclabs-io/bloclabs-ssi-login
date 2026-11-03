@@ -24,7 +24,9 @@
 		cancel: $( '[data-ssi-cancel]' ),
 	};
 
-	const WALLET_SCHEMES = [ 'openid4vp:', 'https:' ]; // Mirror of the bloclabs_ssi_wallet_url_schemes filter default.
+	// The server's list (bloclabs_ssi_wallet_url_schemes), as URL.protocol values.
+	const WALLET_SCHEMES = ( cfg.schemes || [ 'openid4vp', 'https' ] ).map( ( s ) => String( s ).toLowerCase() + ':' );
+	const COMPLETE_RETRIES = 5;
 	let run = 0; // Bumped on cancel/restart so stale pollers stop.
 
 	root.hidden = false;
@@ -35,7 +37,7 @@
 
 	function api( path, options ) {
 		const headers = Object.assign( { Accept: 'application/json' }, options && options.body ? { 'Content-Type': 'application/json' } : {} );
-		headers[ cfg.nonceHeader ] = cfg.nonce;
+		headers[ cfg.tokenHeader ] = cfg.token;
 		return fetch( cfg.restBase + path, Object.assign( { credentials: 'same-origin', cache: 'no-store', headers }, options ) )
 			.then( ( res ) => res.json().catch( () => ( {} ) ).then( ( data ) => ( { ok: res.ok, status: res.status, data } ) ) );
 	}
@@ -66,6 +68,9 @@
 	}
 
 	function reset() {
+		if ( ui.cancel.disabled ) {
+			return; // Completing: the session may already exist.
+		}
 		run++;
 		ui.panel.hidden = true;
 		ui.start.hidden = false;
@@ -95,22 +100,31 @@
 		}, delay );
 	}
 
-	function complete( id, me ) {
+	function complete( id, me, tries ) {
+		ui.cancel.disabled = true;
 		api( 'complete', { method: 'POST', body: JSON.stringify( { attempt: id } ) } ).then( ( r ) => {
-			if ( me !== run ) {
-				return;
-			}
 			if ( r.ok && r.data.redirect_to ) {
-				window.location.assign( r.data.redirect_to );
+				window.location.assign( r.data.redirect_to ); // Logged in: leave, whatever else happened on the page.
 				return;
 			}
+			// The verifier attested a moment before serving its result: try again shortly.
+			if ( r.data && r.data.code === 'bloclabs_ssi_retry' && ( tries || 0 ) < COMPLETE_RETRIES ) {
+				window.setTimeout( () => complete( id, me, ( tries || 0 ) + 1 ), 1500 );
+				return;
+			}
+			ui.cancel.disabled = false;
 			ui.status.textContent = ( r.data && r.data.message ) || cfg.i18n.error;
+			ui.start.hidden = false;
+		} ).catch( () => {
+			ui.cancel.disabled = false;
+			say( 'error' );
 			ui.start.hidden = false;
 		} );
 	}
 
 	function start() {
 		const me = ++run;
+		ui.cancel.disabled = false;
 		ui.start.hidden = true;
 		ui.panel.hidden = false;
 		say( 'starting' );

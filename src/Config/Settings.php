@@ -49,8 +49,6 @@ final class Settings {
 			'event_mode'           => self::EVENT_MODE_WEBHOOK,
 			'webhook_secret'       => '',
 			'webhook_allowed_ips'  => '',
-			// Re-read every delivered event from FireFly before trusting it.
-			'confirm_events'       => true,
 			// Seconds before a pending attempt in webhook mode starts polling FireFly as a fallback.
 			'poll_fallback_after'  => 15,
 			'verifier_url'         => 'http://127.0.0.1:8090',
@@ -58,6 +56,7 @@ final class Settings {
 			// A named credential query the verifier knows (DCQL lives in the verifier, not in WordPress).
 			'credential_query'     => 'default',
 			'attempt_ttl'          => 180,
+			// Login attempts one client IP may open per 10 minutes, whatever became of them.
 			'max_pending_per_ip'   => 10,
 			// $_SERVER key holding the visitor IP behind a trusted proxy, e.g. HTTP_CF_CONNECTING_IP. Empty: REMOTE_ADDR.
 			// Only set it when the origin is unreachable except through that proxy; otherwise the header is spoofable.
@@ -110,10 +109,28 @@ final class Settings {
 	}
 
 	/**
+	 * Whether the site is served over HTTPS, even when PHP sits behind a TLS
+	 * proxy that does not set `HTTPS` (where is_ssl() is false).
+	 */
+	public function site_is_https(): bool {
+		return is_ssl() || 'https' === strtolower( (string) wp_parse_url( home_url(), PHP_URL_SCHEME ) );
+	}
+
+	/**
+	 * Creates the settings option with autoload off, so values typed into the
+	 * settings form are not loaded on every request. A no-op when it exists.
+	 */
+	public static function ensure_option(): void {
+		add_option( self::OPTION, array(), '', false );
+	}
+
+	/**
 	 * Key for HMAC-ing subject identifiers before they are stored.
 	 *
 	 * It is the plugin's own key, not a WordPress salt: rotating the salts must
-	 * not unlink every credential from its account.
+	 * not unlink every credential from its account. Set BLOCLABS_SSI_SUBJECT_KEY
+	 * in wp-config.php to keep it out of the database; the stored fallback
+	 * protects only against reading the identities table on its own.
 	 */
 	public function subject_key(): string {
 		if ( defined( 'BLOCLABS_SSI_SUBJECT_KEY' ) ) {

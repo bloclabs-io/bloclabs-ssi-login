@@ -46,7 +46,16 @@ final class PresentationOffer {
 		if ( strlen( $url ) > 4096 || 1 !== preg_match( '/^([a-z][a-z0-9+.\-]*):\/\/[^\s<>"]*$/i', $url, $m ) ) {
 			return false;
 		}
-		$allowed = (array) apply_filters( 'bloclabs_ssi_wallet_url_schemes', array( 'openid4vp', 'https' ) );
-		return in_array( strtolower( $m[1] ), $allowed, true );
+		return in_array( strtolower( $m[1] ), self::wallet_schemes(), true );
+	}
+
+	/**
+	 * Allowed wallet URL schemes, lower case. The login script receives the same list.
+	 *
+	 * @return list<string>
+	 */
+	public static function wallet_schemes(): array {
+		$schemes = (array) apply_filters( 'bloclabs_ssi_wallet_url_schemes', array( 'openid4vp', 'https' ) );
+		return array_values( array_unique( array_map( static fn ( $s ) => strtolower( (string) $s ), $schemes ) ) );
 	}
 }

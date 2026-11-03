@@ -86,7 +86,7 @@ Done once per environment by an operator (FireFly's own tooling, or `firefly-mcp
 `result` is `1` (verified) or `2` (rejected). With `?confirm=true` the call returned in **2.9 s**, and the event was
 already readable at that point.
 
-**FireFly → WordPress: delivery.** An enriched event. With `withData` off and no batching, the body is the event
+**FireFly → WordPress: delivery.** An enriched event. WordPress uses only its `id`, then re-reads the event (below). With `withData` off and no batching, the body is the event
 itself (with `batch: true`, an array of them):
 ```json
 {
@@ -110,8 +110,12 @@ Note that FireFly renders `uint8` as a string (`"1"`). A captured event is in
 the list endpoint takes `fetchreferences`). A 404 means the delivery named an event FireFly does not have: ignored.
 
 **WordPress → FireFly: poll (fallback).**
-`GET /blockchainevents?listener=<id>&name=LoginAttested&timestamp=>=<attempt start - 5s>&sort=-timestamp&limit=50`.
-FireFly filters take an operator prefix on the value (`>=`); `-` before a sort field means descending.
+`GET /blockchainevents?listener=<id>&name=LoginAttested&timestamp=>=<attempt start - 5s>&sort=-timestamp&limit=50&skip=<n>`,
+page after page until a short page (at most 20 pages). FireFly filters take an operator prefix on the value (`>=`);
+`-` before a sort field means descending. FireFly cannot filter on decoded output, so each page is decoded and
+matched by `correlationId` in WordPress.
+
+**Reorganisations.** A log the chain later drops arrives with `info.removed: true`; WordPress ignores it.
 
 ## What FireFly is, and is not, doing here
 

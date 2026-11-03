@@ -15,8 +15,21 @@ use BlocLabs\SsiLogin\Database\Schema;
 
 final class Lifecycle {
 
-	public static function activate(): void {
+	/**
+	 * @param bool $network_wide True when network-activated on multisite.
+	 */
+	public static function activate( $network_wide = false ): void {
+		// Each site needs its own tables, cron event and settings; network activation would set up one site only.
+		if ( $network_wide && is_multisite() ) {
+			wp_die(
+				esc_html__( 'blocLabs SSI Login cannot be network-activated yet. Activate it on each site instead.', 'bloclabs-ssi-login' ),
+				esc_html__( 'Plugin not activated', 'bloclabs-ssi-login' ),
+				array( 'back_link' => true )
+			);
+		}
+
 		Schema::install();
+		Settings::ensure_option();
 		Settings::ensure_subject_key();
 		PurgeExpired::schedule();
 	}

@@ -15,7 +15,9 @@ namespace BlocLabs\SsiLogin\Assets;
 
 use BlocLabs\SsiLogin\Config\Settings;
 use BlocLabs\SsiLogin\Rest\BrowserController;
+use BlocLabs\SsiLogin\Rest\PageToken;
 use BlocLabs\SsiLogin\Rest\Routes;
+use BlocLabs\SsiLogin\Verifier\PresentationOffer;
 
 use const BlocLabs\SsiLogin\PLUGIN_DIR;
 use const BlocLabs\SsiLogin\PLUGIN_FILE;
@@ -54,9 +56,10 @@ final class AssetManager {
 			'window.bloclabsSsi = ' . wp_json_encode(
 				array(
 					'restBase'    => esc_url_raw( rest_url( Routes::NAMESPACE . '/' ) ),
-					'nonce'       => wp_create_nonce( BrowserController::NONCE_ACTION ),
-					'nonceHeader' => BrowserController::NONCE_HEADER,
+					'token'       => PageToken::create(),
+					'tokenHeader' => BrowserController::TOKEN_HEADER,
 					'redirectTo'  => $redirect,
+					'schemes'     => PresentationOffer::wallet_schemes(),
 					'i18n'        => array(
 						'starting' => __( 'Preparing your request…', 'bloclabs-ssi-login' ),
 						'waiting'  => __( 'Waiting for your wallet…', 'bloclabs-ssi-login' ),

@@ -62,6 +62,10 @@ final class Plugin {
 
 		( new PurgeExpired( $this->attempts() ) )->register();
 
+		// A deleted user, or one removed from this site, keeps no credential link.
+		add_action( 'deleted_user', fn ( $user_id ) => $this->identities()->unlink_user( (int) $user_id ) );
+		add_action( 'remove_user_from_blog', array( $this, 'unlink_removed_user' ), 10, 2 );
+
 		if ( $this->settings()->enabled() ) {
 			( new LoginScreen( $this->settings(), new AssetManager( $this->settings() ) ) )->register();
 		}
@@ -80,6 +84,18 @@ final class Plugin {
 		 * @param Plugin $plugin The composition root, for add-ons that need a service.
 		 */
 		do_action( 'bloclabs_ssi_booted', $this );
+	}
+
+	/**
+	 * @param int|string $user_id
+	 * @param int|string $blog_id
+	 */
+	public function unlink_removed_user( $user_id, $blog_id ): void {
+		$switched = is_multisite() && get_current_blog_id() !== (int) $blog_id && switch_to_blog( (int) $blog_id );
+		$this->identities()->unlink_user( (int) $user_id );
+		if ( $switched ) {
+			restore_current_blog();
+		}
 	}
 
 	public function load_textdomain(): void {
@@ -154,6 +170,7 @@ final class Plugin {
 		return $this->service(
 			LoginFinalizer::class,
 			fn () => new LoginFinalizer(
+				$this->settings(),
 				$this->attempts(),
 				$this->verifier(),
 				new UserResolver( $this->settings(), $this->identities() ),

@@ -26,8 +26,14 @@ final class BrowserBinding {
 
 	/**
 	 * Issues a new secret cookie and returns the hash to store with the attempt.
+	 *
+	 * @throws \RuntimeException When the cookie cannot be sent (output already started).
 	 */
 	public function issue(): string {
+		if ( headers_sent() ) {
+			throw new \RuntimeException( 'Cannot bind the login attempt: headers already sent.' );
+		}
+
 		$secret = rtrim( strtr( base64_encode( random_bytes( 32 ) ), '+/', '-_' ), '=' ); // phpcs:ignore WordPress.PHP.DiscouragedPHPFunctions.obfuscation_base64_encode -- base64url of random bytes.
 
 		$this->set_cookie( $secret, time() + $this->settings->int( 'attempt_ttl' ) + 60 );
@@ -50,11 +56,12 @@ final class BrowserBinding {
 	}
 
 	/**
-	 * `__Host-` pins the cookie to this exact host, HTTPS and path "/".
-	 * Plain HTTP (local development only) cannot use the prefix.
+	 * `__Host-` pins the cookie to this exact host, HTTPS and path "/". The
+	 * site counts as HTTPS when its home URL is, even behind a TLS proxy that
+	 * hides it from PHP. Plain-HTTP sites (local development) cannot use the prefix.
 	 */
 	public function cookie_name(): string {
-		return is_ssl() ? '__Host-bloclabs_ssi' : 'bloclabs_ssi';
+		return $this->settings->site_is_https() ? '__Host-bloclabs_ssi' : 'bloclabs_ssi';
 	}
 
 	private function set_cookie( string $value, int $expires ): void {
@@ -67,7 +74,7 @@ final class BrowserBinding {
 			array(
 				'expires'  => $expires,
 				'path'     => '/',
-				'secure'   => is_ssl(),
+				'secure'   => $this->settings->site_is_https(),
 				'httponly' => true,
 				'samesite' => 'Strict',
 			)

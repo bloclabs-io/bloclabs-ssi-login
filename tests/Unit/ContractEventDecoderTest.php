@@ -72,6 +72,16 @@ final class ContractEventDecoderTest extends TestCase {
 		$this->assertNull( $this->decoder()->decode( self::delivery( array( 'blockchainEvent' => array( 'listener' => 'someone-else' ) ) ) ) );
 	}
 
+	public function test_listener_id_case_does_not_matter(): void {
+		$GLOBALS['bloclabs_ssi_test_options'][ Settings::OPTION ] = array( 'firefly_listener_id' => strtoupper( self::LISTENER ) );
+		$this->assertNotNull( $this->decoder()->decode( self::delivery() ) );
+	}
+
+	public function test_ignores_a_log_removed_by_a_reorg(): void {
+		$this->assertNull( $this->decoder()->decode( self::delivery( array( 'blockchainEvent' => array( 'info' => array( 'removed' => true ) ) ) ) ) );
+		$this->assertNotNull( $this->decoder()->decode( self::delivery( array( 'blockchainEvent' => array( 'info' => array( 'removed' => false ) ) ) ) ) );
+	}
+
 	public function test_ignores_everything_when_no_listener_is_configured(): void {
 		$GLOBALS['bloclabs_ssi_test_options'][ Settings::OPTION ] = array();
 		$this->assertNull( $this->decoder()->decode( self::delivery() ) );
