@@ -1,0 +1,38 @@
+# Security model
+
+What an attacker might try, and what stops them. "Bridge" is the verifier sidecar ([BRIDGE-API.md](BRIDGE-API.md)).
+
+| # | Threat | Mitigation | Where |
+|---|---|---|---|
+| 1 | **Cross-device QR relay.** The attacker opens the login page, sends the QR code to a victim (phishing page, chat), and the victim's wallet logs the attacker's browser in. | No cross-device flow fully prevents this. OpenID4VP 1.0 §14.2 admits its Response Code defence does not work across devices, and RFC 10027 (BCP 247) lists the mitigations used here: short-lived single-use requests (TTL 60–600 s, default 180), rate limits, and a request signed by the verifier's certified identity (`x509_san_dns:` client id), so the wallet can show who is asking. **Prefer same-device login through the Digital Credentials API** (roadmap), which binds the request to the page's origin. | Bridge, `InitiateController`, roadmap |
+| 2 | Guessing or stealing an attempt id to poll or complete someone else's login. | 128-bit `public_id` plus a 256-bit secret in an HttpOnly, SameSite=Strict cookie whose hash the attempt stores. The cookie is `__Host-` and `Secure` whenever the site's home URL is HTTPS, even behind a TLS proxy that hides HTTPS from PHP. Unknown and foreign attempts both answer 404. | `BrowserBinding`, `BrowserController::bound_attempt()` |
+| 3 | Cross-site requests to the login endpoints. | SameSite=Strict cookie plus a login-page token. The token is the same for every visitor (what WordPress computes for a logged-out user), so it is a cross-site check only, not a binding; unlike a regular nonce it also works for a logged-in visitor on wp-login.php. | `PageToken`, `BrowserController::check_page_request()` |
+| 4 | Forged webhook delivery. | Shared secret header (≥ 32 characters, constant-time compare) and optional IP allowlist on the direct peer address. The body is never trusted: the event is always re-read from FireFly by id (no setting turns this off), and a 404 is ignored. FireFly cannot sign webhooks (v1.5), which is why the re-read matters. | `WebhookController`, `AttestationProcessor` |
+| 5 | Replayed webhook or poll applying an attestation twice; double click on complete. | Compare-and-set status transitions (`UPDATE … WHERE status = ?`); `consumed` is terminal. | `AttemptRepository::transition()` |
+| 6 | A forged `LoginAttested` event from another contract. | The decoder accepts only the configured listener, which FireFly binds to the attestor's address; the contract lets only owner-authorised verifiers emit. | `ContractEventDecoder`, `SsiLoginAttestor` |
+| 7 | A compromised or buggy bridge answering WordPress with a different subject than it attested. | WordPress recomputes `sha256(correlation_id ":" subject_id)` and compares the presentation hash with the on-chain values. A mismatch refuses the login and fires `bloclabs_ssi_commitment_mismatch`. | `LoginFinalizer` |
+| 8 | Tracking people by reading the chain. | Only commitments go on chain, salted with the random per-attempt `correlation_id`; the same holder's logins are unlinkable. The browser never sees `correlation_id`. | Contract, `Attempt` |
+| 9 | Account takeover through claim matching ("this credential says ada@example.com"). | Not offered. Subjects log in only to accounts they were linked to, or (opt-in) get a new account. | `UserResolver` |
+| 10 | Self-registration into a powerful role. | Provisioning never grants a role that can `manage_options`, `edit_users` or `promote_users`; it falls back to subscriber. | `UserResolver::safe_role()` |
+| 11 | Table flooding by anonymous `/initiate` calls. | Per-IP cap on attempts opened in 10 minutes (default 10), counting failed and expired ones too, keyed by an HMAC of the IP; a request without a usable client IP is refused. Hourly purge; rows deleted after a day. Behind a proxy, set `client_ip_header` only if the origin is reachable through that proxy alone. | `InitiateController`, `PurgeExpired`, `ClientIp` |
+| 12 | Open redirect after login. | `redirect_to` is validated with `wp_validate_redirect()` at initiate and again after the `login_redirect` filter. | `InitiateController`, `CompleteController` |
+| 13 | Malicious wallet URL from a compromised bridge (`javascript:`). | Only `openid4vp://` and `https://` are accepted, server side and again in the browser; values are set with `textContent` and `href`, never HTML. | `PresentationOffer`, `login.js` |
+| 14 | Secrets leaking through the database or settings screen. | Secrets can be pinned in `wp-config.php` (`BLOCLABS_SSI_*`), are never printed back, and are excluded from REST. | `Settings`, `SettingsPage` |
+| 15 | Exposing FireFly. | FireFly core has no authentication. Keep it on a private network; the plugin supports an `Authorization` header for an authenticating proxy. | Deployment |
+| 16 | Bypassing other login protections (spam flags, lockouts, bans). | Before the cookie is set, the user goes through the `authenticate` filter (core's password callbacks return early for a `WP_User`; the multisite spam check and lockout plugins still run), then `bloclabs_ssi_allow_login`, which must return exactly `true`. `wp_login` fires afterwards, as `wp_signon()` does. Two-factor plugins that work by intercepting `wp_login` on wp-login.php should veto through `bloclabs_ssi_allow_login` instead. | `LoginFinalizer` |
+
+| 17 | A verified login lost to a slow or failing verifier. | `/complete` checks everything before it consumes the attempt; a transient verifier error leaves the attempt `verified` and the browser retries. Only a definitive refusal (commitment mismatch, unlinked credential, veto) fails it. | `LoginFinalizer`, `login.js` |
+| 18 | A log dropped by a chain reorganisation logging someone in. | Events with `removed: true` are ignored (not treated as a rejection, so a re-mined transaction can still verify). On instant-finality chains (QBFT) this does not occur. | `ContractEventDecoder` |
+| 19 | Reading claims from the bridge's result route. | WordPress refuses to start a login unless the bridge Authorization header is set, and the bridge must require it. The result route belongs on the private network; the wallet-facing host serves only OpenID4VP endpoints. | `InitiateController`, BRIDGE-API.md |
+| 20 | A deleted account's credential left pointing at nothing. | Links are removed on `deleted_user` and on removal from a site; a link to a missing user counts as no link. | `Plugin`, `UserResolver` |
+
+## Residual risks
+
+- Threat 1 is reduced, not removed, until the Digital Credentials API path ships. Treat cross-device credential login
+  like any QR login: keep the TTL short and the wallet's display of the verifier identity meaningful.
+- The bridge holds the verifier's request-signing keys and the chain signing key. It is the most sensitive component;
+  run it with the least network exposure that wallets allow.
+- Without `BLOCLABS_SSI_SUBJECT_KEY` in wp-config.php, the subject key lives in the same database as the identities
+  table, so someone holding a full dump can test guessed DIDs against it. Set the constant.
+- Trust in issuers, and revocation checks, live in the bridge in 0.1. The on-chain trusted-issuer registry on the
+  roadmap makes that policy auditable too.
