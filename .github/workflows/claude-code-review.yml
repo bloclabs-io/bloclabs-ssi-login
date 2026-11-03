@@ -1,0 +1,60 @@
+name: Claude Code Review
+
+on:
+  pull_request:
+    types: [opened, synchronize, ready_for_review, reopened]
+
+# One review per PR at a time: a new push cancels the review of the previous head.
+concurrency:
+  group: claude-review-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  claude-review:
+    # Public repository: review only branches of this repository. Pull requests from forks get no
+    # secrets, and their workflow changes must never run with ours.
+    if: >-
+      github.event.pull_request.draft == false &&
+      github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: write
+      issues: write
+      id-token: write
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Run Claude Code Review
+        uses: anthropics/claude-code-action@v1
+        with:
+          claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          prompt: |
+            REPO: ${{ github.repository }}
+            PR NUMBER: ${{ github.event.pull_request.number }}
+
+            Review this pull request. This repository is a WordPress plugin that logs users in with Verifiable
+            Credentials (OpenID4VP). A verifier attests each decision on chain through Hyperledger FireFly, and
+            WordPress consumes the event. Read docs/SECURITY-MODEL.md first: each mitigation there must survive
+            the change.
+
+            1. Get the diff with `gh pr diff ${{ github.event.pull_request.number }}` and the description with
+               `gh pr view ${{ github.event.pull_request.number }}`. Read surrounding code with Read/Grep when needed.
+            2. Check, in this order:
+               - ways to log in as someone else, or to complete, poll, forge or replay another login attempt;
+               - attempt state changes that are not compare-and-set, and races between webhook, polling and completion;
+               - anything that puts personal data on chain or in logs, and any secret, hostname or IP address
+                 committed to this public repository;
+               - WordPress correctness: REST permission callbacks, nonces, cookies, escaping, prepared SQL, capabilities;
+               - tests for security-relevant changes, and docs that no longer match the code.
+            3. Post each concrete problem as an inline comment on the exact line with
+               mcp__github_inline_comment__create_inline_comment.
+            4. Finish with exactly one summary comment via `gh pr comment ${{ github.event.pull_request.number }} --body "..."`:
+               a verdict line ("No blocking issues" or "Blocking: N issue(s)"), then a short list of findings.
+            Don't nitpick the style of code that the PR doesn't touch; phpcs already enforces it.
+          claude_args: |
+            --allowedTools "mcp__github_inline_comment__create_inline_comment,Bash(gh pr comment:*),Bash(gh pr diff:*),Bash(gh pr view:*),Read,Grep,Glob"
