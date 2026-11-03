@@ -1,0 +1,60 @@
+{
+  "listener": "6d64577c-d710-447f-b00f-4614781c2288",
+  "api": "ssi-login-attestor-8f4697",
+  "address": "0x756ebfeafeb6c28ebd7cfee3f2e79ac1d16b8ee3",
+  "correlation": "3575e334c14dcc31670ded8ad7c600007ccd69a694c8251151b51c8780b97fea",
+  "subject": "did:key:z6MkhaXgBZDvotDkL5257faiztiGiC2QtKLGpbnnEGta2doK",
+  "commitment": "0b0a5c9cc57cdd4951ed9a01636dbe449ff53c6b2064891ba1568bb5b83189c4",
+  "presentation_hash": "ced03b89f43cf1f5acb79d216f7477415a7e798a7434feb513102f1eda2069f5",
+  "delivery": {
+    "id": "0bf6109f-44f9-4094-9694-1df229e2c085",
+    "sequence": 255,
+    "type": "blockchain_event_received",
+    "namespace": "default",
+    "reference": "1df07f41-0679-4883-8328-6230ddd1d632",
+    "topic": "ssi-login",
+    "created": "2026-11-03T10:47:21.403923739Z",
+    "blockchainEvent": {
+      "id": "1df07f41-0679-4883-8328-6230ddd1d632",
+      "source": "ethereum",
+      "namespace": "default",
+      "name": "LoginAttested",
+      "listener": "6d64577c-d710-447f-b00f-4614781c2288",
+      "protocolId": "000000001765/000000/000000",
+      "output": {
+        "correlationId": "0x3575e334c14dcc31670ded8ad7c600007ccd69a694c8251151b51c8780b97fea",
+        "presentationHash": "0xced03b89f43cf1f5acb79d216f7477415a7e798a7434feb513102f1eda2069f5",
+        "result": "1",
+        "subjectCommitment": "0x0b0a5c9cc57cdd4951ed9a01636dbe449ff53c6b2064891ba1568bb5b83189c4",
+        "verifier": "0xbf33f2531f9326b66a43e2cb247d59265fc93abe"
+      },
+      "info": {
+        "address": "0x756ebfeafeb6c28ebd7cfee3f2e79ac1d16b8ee3",
+        "blockHash": "0xb1f91700a3d91d86284edaf64fc43d783f9b9959f5fb3ef0c3a8f0c2214089ce",
+        "blockNumber": "1765",
+        "chainId": "2026",
+        "listenerId": "01a1a105-39ff-ed28-c38b-77aee4316d08",
+        "listenerName": "ff-sub-default-6d64577c-d710-447f-b00f-4614781c2288",
+        "listenerType": "events",
+        "logIndex": "0",
+        "removed": false,
+        "signature": "LoginAttested(bytes32,uint8,bytes32,bytes32,address)",
+        "streamId": "01a182bc-4c98-4e02-91ce-697623a44ba8",
+        "subId": "01a1a105-39ff-ed28-c38b-77aee4316d08",
+        "timestamp": "2026-11-03T10:47:20Z",
+        "topics": [
+          "0xb49680a17f097dba217f56280b1f5cd0138fb4f1141a316a4e2762f1ff350b44",
+          "0x3575e334c14dcc31670ded8ad7c600007ccd69a694c8251151b51c8780b97fea",
+          "0x000000000000000000000000bf33f2531f9326b66a43e2cb247d59265fc93abe"
+        ],
+        "transactionHash": "0x3a3c01fb17de9b6dbe4c6fe9260a89dc668417689b01b5012c5036a719e2dba8",
+        "transactionIndex": "0"
+      },
+      "timestamp": "2026-11-03T10:47:20Z",
+      "tx": {
+        "blockchainId": "0x3a3c01fb17de9b6dbe4c6fe9260a89dc668417689b01b5012c5036a719e2dba8"
+      }
+    }
+  },
+  "_note": "Captured from a local FireFly v1.5.0 + Besu QBFT node: GET /events/{id}?fetchreference=true after one attest() call. Throwaway local chain."
+}

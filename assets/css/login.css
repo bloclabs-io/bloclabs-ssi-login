@@ -1,0 +1,49 @@
+/* blocLabs SSI Login: the credential block on wp-login.php. */
+.bloclabs-ssi {
+	margin: 16px 0 8px;
+	clear: both;
+	text-align: center;
+}
+
+.bloclabs-ssi__divider {
+	display: flex;
+	align-items: center;
+	gap: 8px;
+	margin: 0 0 12px;
+	color: #646970;
+	font-size: 12px;
+	text-transform: uppercase;
+}
+
+.bloclabs-ssi__divider::before,
+.bloclabs-ssi__divider::after {
+	content: "";
+	flex: 1;
+	border-top: 1px solid #dcdcde;
+}
+
+.bloclabs-ssi .bloclabs-ssi__start {
+	float: none;
+	width: 100%;
+}
+
+.bloclabs-ssi__panel {
+	margin-top: 12px;
+}
+
+.bloclabs-ssi__qr img {
+	width: 100%;
+	max-width: 232px;
+	height: auto;
+	image-rendering: pixelated;
+	background: #fff;
+}
+
+.bloclabs-ssi__status {
+	min-height: 1.5em;
+	margin: 8px 0;
+}
+
+.bloclabs-ssi [hidden] {
+	display: none !important;
+}
