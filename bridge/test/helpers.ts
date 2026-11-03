@@ -281,11 +281,11 @@ export interface MockFireFly {
   close(): Promise<void>;
 }
 
-export function okOperation(): { status: number; body: unknown } {
+export function okOperation(): ScriptedAnswer {
   return { status: 200, body: { id: randomUUID(), tx: randomUUID(), type: 'blockchain_invoke', status: 'Succeeded', output: {} } };
 }
 
-export function duplicateKey(transactionId: string): { status: number; body: unknown } {
+export function duplicateKey(transactionId: string): ScriptedAnswer {
   return { status: 409, body: { error: `FF10431: Idempotency key 'bloclabs-ssi-login:x' already used for transaction '${transactionId}'` } };
 }
 
