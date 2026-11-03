@@ -50,7 +50,7 @@ final class StatusRouteTest extends IntegrationTestCase {
 	public function test_polling_fallback_applies_an_attestation(): void {
 		$opened    = $this->open_attempt();
 		$public_id = (string) $opened['data']['attempt'];
-		$delivery  = CapturedLoginEvent::delivery_for( (string) $opened['row']['correlation_id'] );
+		$delivery  = CapturedLoginEvent::delivery_for( (string) $opened['row']['correlation_id'], (string) $opened['row']['blinding_secret'] );
 		FireFlyHttpFake::instance()->serve( $delivery );
 
 		// Webhook mode, and the attempt is younger than poll_fallback_after: do not poll.
@@ -71,7 +71,7 @@ final class StatusRouteTest extends IntegrationTestCase {
 		$subject = (string) CapturedLoginEvent::fixture()['subject'];
 		$this->assertSame( 'verified', $row['status'] );
 		$this->assertSame(
-			Attestation::subject_commitment( (string) $opened['row']['correlation_id'], $subject ),
+			Attestation::subject_commitment( (string) $opened['row']['correlation_id'], (string) $opened['row']['blinding_secret'], $subject ),
 			$row['subject_commitment']
 		);
 		$this->assertSame( (string) CapturedLoginEvent::fixture()['presentation_hash'], $row['presentation_hash'] );

@@ -162,7 +162,7 @@ abstract class IntegrationTestCase extends \WP_UnitTestCase {
 	 * @return array<string, mixed> The delivery WordPress re-reads.
 	 */
 	protected function attest( array $row, bool $removed = false ): array {
-		$delivery = CapturedLoginEvent::delivery_for( (string) $row['correlation_id'], $removed );
+		$delivery = CapturedLoginEvent::delivery_for( (string) $row['correlation_id'], (string) $row['blinding_secret'], $removed );
 		FireFlyHttpFake::instance()->serve( $delivery );
 		$response = $this->dispatch(
 			'POST',

@@ -42,6 +42,9 @@ final class InitiateRouteTest extends IntegrationTestCase {
 
 		$this->assertNotSame( '', $secret );
 		$this->assertSame( (string) $opened['row']['correlation_id'], VerifierFake::instance()->last_request?->correlation_id );
+		$this->assertMatchesRegularExpression( '/^[0-9a-f]{64}$/', (string) $opened['row']['blinding_secret'] );
+		$this->assertSame( (string) $opened['row']['blinding_secret'], VerifierFake::instance()->last_request?->blinding_secret, 'the bridge gets the secret that blinds the commitment' );
+		$this->assertArrayNotHasKey( 'blinding_secret', $opened['data'], 'the browser never sees it' );
 
 		$headers = implode( "\n", headers_list() );
 		if ( str_contains( $headers, 'bloclabs_ssi=' ) ) {

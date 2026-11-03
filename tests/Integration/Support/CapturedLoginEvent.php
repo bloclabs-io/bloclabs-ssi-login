@@ -2,10 +2,11 @@
 /**
  * The captured FireFly v1.5.0 LoginAttested event, with one attempt's correlation id swapped in.
  *
- * The fixture's subject commitment is sha256(correlation_id ":" subject_id). Swapping the
- * correlation without recomputing that commitment would make the captured log contradict
- * itself, and every successful login would fail the plugin's own check. The presentation
- * hash and the rest of the log stay as captured.
+ * The fixture's subject commitment is sha256(correlation_id ":" blinding_secret ":" subject_id).
+ * Swapping the correlation without recomputing that commitment with the attempt's own
+ * blinding secret would make the captured log contradict itself, and every successful login
+ * would fail the plugin's own check. The presentation hash and the rest of the log stay as
+ * captured.
  *
  * @package BlocLabs\SsiLogin
  */
@@ -37,11 +38,11 @@ final class CapturedLoginEvent {
 	 *
 	 * @return array<string, mixed>
 	 */
-	public static function delivery_for( string $correlation_id, bool $removed = false ): array {
+	public static function delivery_for( string $correlation_id, string $blinding_secret, bool $removed = false ): array {
 		$fixture        = self::fixture();
 		$event          = $fixture['delivery'];
 		$correlation_id = strtolower( $correlation_id );
-		$commitment     = hash( 'sha256', $correlation_id . ':' . $fixture['subject'] );
+		$commitment     = hash( 'sha256', $correlation_id . ':' . $blinding_secret . ':' . $fixture['subject'] );
 
 		$event['blockchainEvent']['output']['correlationId']     = '0x' . $correlation_id;
 		$event['blockchainEvent']['output']['subjectCommitment'] = '0x' . $commitment;
