@@ -5,7 +5,9 @@ name: Claude Code Review
 on:
   pull_request:
     # ready_for_review: a label added while the PR was a draft still gets its review.
-    types: [labeled, ready_for_review]
+    # synchronize: a new head starts a run that cancels a review of the old head (concurrency below);
+    # the job itself is skipped for it.
+    types: [labeled, ready_for_review, synchronize]
 
 # One review per PR at a time: a new push cancels the review of the previous head.
 concurrency:
