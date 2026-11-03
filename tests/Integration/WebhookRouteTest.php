@@ -18,7 +18,7 @@ final class WebhookRouteTest extends IntegrationTestCase {
 
 	public function test_wrong_secret_is_refused(): void {
 		$opened   = $this->open_attempt();
-		$delivery = CapturedLoginEvent::delivery_for( (string) $opened['row']['correlation_id'] );
+		$delivery = CapturedLoginEvent::delivery_for( (string) $opened['row']['correlation_id'], (string) $opened['row']['blinding_secret'] );
 		FireFlyHttpFake::instance()->serve( $delivery );
 
 		$response = $this->dispatch(
@@ -38,7 +38,7 @@ final class WebhookRouteTest extends IntegrationTestCase {
 	public function test_short_secret_is_refused(): void {
 		$this->configure( array( 'webhook_secret' => 'short-secret' ) );
 		$opened   = $this->open_attempt();
-		$delivery = CapturedLoginEvent::delivery_for( (string) $opened['row']['correlation_id'] );
+		$delivery = CapturedLoginEvent::delivery_for( (string) $opened['row']['correlation_id'], (string) $opened['row']['blinding_secret'] );
 		FireFlyHttpFake::instance()->serve( $delivery );
 
 		$response = $this->dispatch(
