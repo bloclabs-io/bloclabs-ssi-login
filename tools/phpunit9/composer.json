@@ -1,0 +1,11 @@
+{
+	"name": "bloclabs/ssi-login-phpunit9",
+	"description": "Isolated PHPUnit 9 runner for the WordPress integration suite. The unit suite stays on PHPUnit 10.",
+	"require": {
+		"php": ">=8.1",
+		"phpunit/phpunit": "9.6.29"
+	},
+	"config": {
+		"sort-packages": true
+	}
+}
