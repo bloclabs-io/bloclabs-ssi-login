@@ -1,0 +1,85 @@
+# Example: the verifier bridge next to walt.id verifier-api2.
+#
+# Placeholder values only. Replace every <...> and generate the secret before use;
+# nothing here is a real host, key or address.
+#
+#   bridge    private network only. WordPress calls its two routes, the verifier calls
+#             its callback route. Never publish it.
+#   verifier  the only public surface, published through a TLS reverse proxy at
+#             https://<verifier-public-host> (wallets need HTTPS).
+#
+# FireFly, with the SsiLoginAttestor contract and its `ssi-login-attestor` API, runs on
+# the same private network (docs/FIREFLY-FLOW.md, "One-time setup"). WordPress reaches
+# the bridge at http://bridge:8090 (plugin setting `verifier_url`) with
+# BLOCLABS_SSI_VERIFIER_AUTH_HEADER = "Bearer <the BRIDGE_AUTH_TOKEN below>".
+
+services:
+  bridge:
+    build: .
+    # or: image: <registry>/bloclabs-ssi-bridge:<tag>
+    restart: unless-stopped
+    environment:
+      BRIDGE_PORT: "8090"
+      # Generate with: openssl rand -base64 32
+      BRIDGE_AUTH_TOKEN: "<random-token-of-at-least-32-characters>"
+      # How the verifier reaches the bridge; the request id is appended per session.
+      BRIDGE_CALLBACK_URL: "http://bridge:8090/v1/verifier-callbacks"
+      VERIFIER_URL: "http://verifier:7004"
+      FIREFLY_URL: "http://<firefly-core-host>:5000"
+      FIREFLY_NAMESPACE: "default"
+      FIREFLY_API_NAME: "ssi-login-attestor"
+      # The address FireFly signs with. The contract owner must have authorised it (setVerifier).
+      FIREFLY_SIGNING_KEY: "0x<verifier-signing-address>"
+      # FIREFLY_AUTH_HEADER: "Bearer <token-of-the-authenticating-proxy-in-front-of-firefly>"
+      BRIDGE_LOG_LEVEL: "info"
+      # Named queries. `default` is what the plugin asks for unless its `credential_query`
+      # setting says otherwise: one SD-JWT VC with cryptographic holder binding (the DCQL
+      # default), signed by a listed issuer, in its validity period.
+      BRIDGE_QUERIES: |
+        {
+          "default": {
+            "dcql_query": {
+              "credentials": [
+                {
+                  "id": "login",
+                  "format": "dc+sd-jwt",
+                  "meta": { "vct_values": ["https://<issuer-host>/credentials/<credential-type>"] },
+                  "claims": [
+                    { "path": ["given_name"] },
+                    { "path": ["family_name"] },
+                    { "path": ["email"] }
+                  ]
+                }
+              ]
+            },
+            "policies": {
+              "vc_policies": [
+                "signature",
+                "expiration",
+                "not-before",
+                { "policy": "allowed-issuer", "allowed_issuer": ["did:web:<issuer-host>"] }
+              ]
+            }
+          }
+        }
+    networks:
+      - private
+    depends_on:
+      - verifier
+
+  verifier:
+    image: waltid/verifier-api2:1.2.0
+    restart: unless-stopped
+    volumes:
+      - ./verifier:/waltid-verifier-api2/config:ro
+    ports:
+      # Bind to the host loopback and publish through a TLS reverse proxy as https://<verifier-public-host>.
+      - "127.0.0.1:7004:7004"
+    networks:
+      - private
+
+networks:
+  private:
+    # Use the network WordPress and FireFly are on, for example:
+    # external: true
+    # name: <firefly-compose-network>
