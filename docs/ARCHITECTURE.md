@@ -70,6 +70,7 @@ flowchart TB
 | Where does transient login state live? | A custom indexed table, with an HttpOnly binding cookie | [ADR 0002](adr/0002-session-binding-custom-table.md) |
 | How does WordPress hear about results? | FireFly webhook as a doorbell, re-read from FireFly, with polling as a fallback | [ADR 0003](adr/0003-event-consumption.md) |
 | What does FireFly carry? | An on-chain `LoginAttested` event with commitments only | [ADR 0004](adr/0004-on-chain-attestation.md) |
+| What is the bridge built with? | TypeScript on Node 22 with no runtime dependencies, next to walt.id verifier-api2 in its own container | [ADR 0005](adr/0005-bridge-stack.md) |
 
 ## Data model
 
@@ -81,6 +82,7 @@ flowchart TB
 | `correlation_id` | 256-bit id shared with the verifier and emitted on chain. Never sent to the browser |
 | `binding_hash` | SHA-256 of the browser's cookie secret |
 | `nonce` | Offered to the verifier for the presentation's key binding |
+| `blinding_secret` | 256-bit per-attempt secret shared with the bridge only. Blinds `subject_commitment`, so the chain cannot be searched for a holder. Never sent to the browser |
 | `status` | `pending` → `verified` → `consumed`, or `rejected` / `expired` / `failed` |
 | `verifier_ref` | The bridge's request id |
 | `subject_commitment`, `presentation_hash` | Copied from the on-chain event; checked against the bridge's answer at completion |
@@ -104,7 +106,7 @@ Nothing else is stored. Claims are fetched from the bridge at completion, used, 
 4. **Bridge → chain.** Only addresses the contract owner authorised can emit `LoginAttested`. The contract listener
    is bound to the contract address, and the decoder accepts only the configured listener.
 5. **Bridge's HTTP answer vs. its on-chain record.** At completion WordPress recomputes
-   `sha256(correlation_id ":" subject_id)` and compares the presentation hash. A bridge that lies over HTTP
+   `sha256(correlation_id ":" blinding_secret ":" subject_id)` and compares the presentation hash. A bridge that lies over HTTP
    contradicts its own signed on-chain record.
 
 See [SECURITY-MODEL.md](SECURITY-MODEL.md) for threats and mitigations.

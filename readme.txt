@@ -14,7 +14,7 @@ Passwordless login with Verifiable Credentials (OpenID4VP). Every login decision
 
 Visitors log in by presenting a credential from their identity wallet. A verifier checks it and records its decision on a blockchain through Hyperledger FireFly; FireFly notifies WordPress, which logs the visitor in. Only commitments go on chain, never personal data.
 
-**Pre-alpha.** The verifier bridge this plugin talks to is not released yet. See the GitHub repository for status and architecture.
+**Pre-alpha.** The reference verifier bridge lives in the repository's bridge/ directory and has not been exercised end to end with a real wallet yet. See the GitHub repository for status and architecture.
 
 == Installation ==
 

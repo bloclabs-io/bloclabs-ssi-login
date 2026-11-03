@@ -14,7 +14,7 @@ sequenceDiagram
     participant W as Wallet
     participant FF as FireFly
 
-    WP->>BR: POST /v1/presentation-requests {correlation_id, nonce, query, expires_at}
+    WP->>BR: POST /v1/presentation-requests {correlation_id, nonce, blinding_secret, query, expires_at}
     BR->>V: POST /verification-session/create (DCQL query, expiry, webhook)
     V-->>BR: {sessionId, bootstrapAuthorizationRequestUrl}
     BR-->>WP: 201 {id, wallet_url}
@@ -40,8 +40,9 @@ sequenceDiagram
    verifier's nonce and audience, issuer signature, and whatever `policies` the query adds, such as allowed issuers and
    status lists). `FAILED` is a rejection, including a wallet's OpenID4VP error response.
 4. **Computes the commitments.** `subject_id` is the holder key the presentation was bound to: the RFC 9278 thumbprint
-   URI of `cnf.jwk`, or the DID behind `cnf.kid`. `subjectCommitment = sha256(correlation_id ":" subject_id)`;
-   `presentationHash = sha256(canonical JSON of the vp_token map)` (see BRIDGE-API.md).
+   URI of `cnf.jwk`, or the DID behind `cnf.kid`. `subjectCommitment = sha256(correlation_id ":" blinding_secret ":"
+   subject_id)`, with the per-attempt secret WordPress sent and nobody else holds; `presentationHash = sha256(canonical
+   JSON of the vp_token map)` (see BRIDGE-API.md).
 5. **Attests through FireFly** with `idempotencyKey = bloclabs-ssi-login:<correlation_id>`. A retry after a timeout or
    crash can never attest twice: FireFly answers `409 FF10431` with the earlier transaction, and the bridge reads that
    transaction's status instead. Rejections are attested with `result = 2` and zero commitments.
