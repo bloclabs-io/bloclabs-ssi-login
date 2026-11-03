@@ -84,6 +84,7 @@ export class VerifierClient {
       headers['Content-Type'] = 'application/json';
     }
     let response: Response;
+    let text: string;
     try {
       response = await this.fetchImpl(this.baseUrl + path, {
         method,
@@ -91,14 +92,18 @@ export class VerifierClient {
         body: body === undefined ? null : JSON.stringify(body),
         signal: AbortSignal.timeout(this.timeoutMs),
       });
+      const length = Number(response.headers.get('content-length') ?? '0');
+      if (length > MAX_SESSION_BYTES) {
+        throw new VerifierError('The verifier answered with a body larger than the bridge accepts', false, response.status);
+      }
+      // A reset or a timeout while reading the body is a transport failure like any other.
+      text = await response.text();
     } catch (error) {
+      if (error instanceof VerifierError) {
+        throw error;
+      }
       throw new VerifierError(`The verifier is unreachable: ${(error as Error).message}`, true);
     }
-    const length = Number(response.headers.get('content-length') ?? '0');
-    if (length > MAX_SESSION_BYTES) {
-      throw new VerifierError('The verifier answered with a body larger than the bridge accepts', false, response.status);
-    }
-    const text = await response.text();
     if (!response.ok) {
       throw new VerifierError(
         `The verifier answered HTTP ${response.status}: ${text.slice(0, 500)}`,

@@ -119,6 +119,7 @@ export class FireFlyClient {
     }
     const url = `${this.config.url}/api/v1/namespaces/${encodeURIComponent(this.config.namespace)}/${path}`;
     let response: Response;
+    let text: string;
     try {
       response = await this.fetchImpl(url, {
         method,
@@ -126,10 +127,12 @@ export class FireFlyClient {
         body: body === undefined ? null : JSON.stringify(body),
         signal: AbortSignal.timeout(timeoutMs),
       });
+      // Reading the body is part of the transport: a reset or a timeout here is retried
+      // with the same idempotency key, like a failure to connect.
+      text = await response.text();
     } catch (error) {
       throw new FireFlyError(`FireFly is unreachable: ${(error as Error).message}`, true);
     }
-    const text = await response.text();
     let data: Record<string, unknown> | null = null;
     try {
       const parsed: unknown = JSON.parse(text);

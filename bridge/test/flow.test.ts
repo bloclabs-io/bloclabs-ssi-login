@@ -210,6 +210,19 @@ describe('presentation requests', () => {
     assert.equal((await t.call('GET', `/v1/presentation-requests/${id}/result`)).status, 200);
   });
 
+  it('retries when the connection drops while FireFly is answering', async () => {
+    const { id, correlationId } = await open();
+    t.verifier.setSession(id, successfulSession(id));
+    const transactionId = '1d7b0000-3333-4444-8555-666666666666';
+    t.firefly.responses.push(() => ({ ...okOperation(), truncate: true }), () => duplicateKey(transactionId));
+    await t.verifier.fireCallback(id);
+    await t.bridge.idle();
+
+    assert.equal(t.firefly.invokes.length, 2, 'the cut-off answer is retried with the same key');
+    assert.equal(t.firefly.invokes[1]!.body['idempotencyKey'], idempotencyKey(correlationId));
+    assert.equal((await t.call('GET', `/v1/presentation-requests/${id}/result`)).status, 200);
+  });
+
   it('treats a duplicate key whose earlier transaction failed as a failed attestation', async () => {
     const { id } = await open();
     t.verifier.setSession(id, successfulSession(id));

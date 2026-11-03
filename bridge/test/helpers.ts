@@ -262,7 +262,14 @@ export interface FireFlyCall {
   body: Record<string, unknown>;
 }
 
-export type ScriptedResponse = (call: FireFlyCall) => Promise<{ status: number; body: unknown }> | { status: number; body: unknown };
+export interface ScriptedAnswer {
+  status: number;
+  body: unknown;
+  /** Send the headers and the first bytes of the body, then drop the connection. */
+  truncate?: boolean;
+}
+
+export type ScriptedResponse = (call: FireFlyCall) => Promise<ScriptedAnswer> | ScriptedAnswer;
 
 export interface MockFireFly {
   url: string;
@@ -295,6 +302,13 @@ export async function startMockFireFly(): Promise<MockFireFly> {
       invokes.push(call);
       const scripted = responses.shift();
       const answer = scripted ? await scripted(call) : okOperation();
+      if (answer.truncate) {
+        const payload = JSON.stringify(answer.body);
+        res.writeHead(answer.status, { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(payload) });
+        res.write(payload.slice(0, 8));
+        res.destroy();
+        return;
+      }
       json(res, answer.status, answer.body);
       return;
     }
