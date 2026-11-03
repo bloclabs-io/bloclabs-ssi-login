@@ -4,7 +4,8 @@ name: Claude Code Review
 # Add the `claude-review` label to a pull request for a Claude review as well.
 on:
   pull_request:
-    types: [labeled]
+    # ready_for_review: a label added while the PR was a draft still gets its review.
+    types: [labeled, ready_for_review]
 
 # One review per PR at a time: a new push cancels the review of the previous head.
 concurrency:
@@ -16,8 +17,9 @@ jobs:
     # Public repository: review only branches of this repository. Pull requests from forks get no
     # secrets, and their workflow changes must never run with ours.
     if: >-
-      github.event.label.name == 'claude-review' &&
       github.event.pull_request.draft == false &&
+      contains(github.event.pull_request.labels.*.name, 'claude-review') &&
+      (github.event.action == 'ready_for_review' || github.event.label.name == 'claude-review') &&
       github.event.pull_request.head.repo.full_name == github.repository
     runs-on: ubuntu-latest
     permissions:
