@@ -6,7 +6,7 @@
  * does not list which DIDs hold accounts here. With BLOCLABS_SSI_SUBJECT_KEY in
  * wp-config.php, a full database dump cannot test guessed DIDs either; with the
  * stored fallback key, it can. A short label is kept for the
- * user's profile screen ("did:key #3f9a1c2e"), which does not reveal the subject.
+ * user's profile screen ("did:key #3f9a1c2e"): a keyed fingerprint that does not reveal the subject.
  *
  * phpcs:disable WordPress.DB.DirectDatabaseQuery -- custom table; lookups are by unique key.
  *
@@ -64,10 +64,11 @@ final class IdentityRepository {
 
 	/**
 	 * An opaque label for the profile screen: the DID method (or "credential") and
-	 * a short hash. It never contains the identifier itself.
+	 * a short keyed fingerprint. It never contains the identifier, and without the
+	 * subject key it cannot confirm a guessed one.
 	 */
-	public static function label( string $subject_id ): string {
+	public static function label( string $subject_id, string $key ): string {
 		$kind = 1 === preg_match( '/^(did:[a-z0-9]+):/', $subject_id, $m ) ? $m[1] : 'credential';
-		return $kind . ' #' . substr( hash( 'sha256', $subject_id ), 0, 8 );
+		return $kind . ' #' . substr( hash_hmac( 'sha256', 'label|' . $subject_id, $key ), 0, 8 );
 	}
 }

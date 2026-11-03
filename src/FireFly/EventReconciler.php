@@ -17,6 +17,7 @@ namespace BlocLabs\SsiLogin\FireFly;
 use BlocLabs\SsiLogin\Config\Settings;
 use BlocLabs\SsiLogin\Session\Attempt;
 use BlocLabs\SsiLogin\Session\AttemptRepository;
+use BlocLabs\SsiLogin\Session\AttemptStatus;
 
 final class EventReconciler {
 
@@ -24,6 +25,8 @@ final class EventReconciler {
 	private const PAGE_SIZE      = 50;
 	// 20 pages: 1,000 attestations within one attempt's lifetime is far beyond a single site's login rate.
 	private const MAX_PAGES = 20;
+	// One status request never spends longer than this on FireFly.
+	private const TIME_BUDGET = 8.0;
 
 	public function __construct(
 		private readonly Settings $settings,
@@ -51,7 +54,11 @@ final class EventReconciler {
 		}
 
 		$applied = 0;
+		$started = microtime( true );
 		for ( $page = 0; $page < self::MAX_PAGES; $page++ ) {
+			if ( $page > 0 && microtime( true ) - $started > self::TIME_BUDGET ) {
+				break; // The next poll continues; settled attempts are skipped as duplicates.
+			}
 			try {
 				// Every attestation since this attempt started, newest first, a page at a time.
 				$events = $this->firefly->blockchain_events(
@@ -81,6 +88,12 @@ final class EventReconciler {
 			}
 
 			if ( count( $events ) < self::PAGE_SIZE ) {
+				break;
+			}
+
+			// Found ours: no need to read older pages.
+			$current = $this->attempts->find_by_public_id( $attempt->public_id );
+			if ( null === $current || AttemptStatus::Pending !== $current->status ) {
 				break;
 			}
 		}

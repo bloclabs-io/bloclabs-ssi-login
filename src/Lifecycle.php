@@ -30,6 +30,7 @@ final class Lifecycle {
 
 		Schema::install();
 		Settings::ensure_option();
+		wp_set_option_autoload( Settings::OPTION, false );
 		Settings::ensure_subject_key();
 		PurgeExpired::schedule();
 	}

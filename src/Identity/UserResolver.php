@@ -23,6 +23,9 @@ use BlocLabs\SsiLogin\Verifier\PresentationResult;
 
 final class UserResolver {
 
+	/** @var array<int, string> Users this request created, with their subject hash. */
+	private array $provisioned = array();
+
 	public function __construct(
 		private readonly Settings $settings,
 		private readonly IdentityRepository $identities,
@@ -104,13 +107,28 @@ final class UserResolver {
 			return null;
 		}
 
-		if ( ! $this->identities->link( $hash, $user_id, IdentityRepository::label( $result->subject_id ), $result->issuer ) ) {
+		if ( ! $this->identities->link( $hash, $user_id, IdentityRepository::label( $result->subject_id, $this->settings->subject_key() ), $result->issuer ) ) {
 			// Lost a race with a concurrent provision of the same subject: use the winner.
 			require_once ABSPATH . 'wp-admin/includes/user.php';
 			wp_delete_user( $user_id );
 			return $this->identities->user_id_for( $hash );
 		}
 
+		$this->provisioned[ $user_id ] = $hash;
 		return $user_id;
+	}
+
+	/**
+	 * Removes an account this request provisioned, when the login it was made for
+	 * is then refused: otherwise every later attempt would find it and fail again.
+	 */
+	public function undo_provision( \WP_User $user ): void {
+		if ( ! isset( $this->provisioned[ $user->ID ] ) ) {
+			return;
+		}
+		unset( $this->provisioned[ $user->ID ] );
+		$this->identities->unlink_user( $user->ID );
+		require_once ABSPATH . 'wp-admin/includes/user.php';
+		wp_delete_user( $user->ID );
 	}
 }

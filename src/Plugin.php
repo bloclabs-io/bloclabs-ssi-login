@@ -91,9 +91,13 @@ final class Plugin {
 	 * @param int|string $blog_id
 	 */
 	public function unlink_removed_user( $user_id, $blog_id ): void {
-		$switched = is_multisite() && get_current_blog_id() !== (int) $blog_id && switch_to_blog( (int) $blog_id );
-		$this->identities()->unlink_user( (int) $user_id );
-		if ( $switched ) {
+		if ( get_current_blog_id() === (int) $blog_id ) {
+			$this->identities()->unlink_user( (int) $user_id );
+			return;
+		}
+		// Another site: unlink there, and only if switching to it worked.
+		if ( is_multisite() && switch_to_blog( (int) $blog_id ) ) {
+			$this->identities()->unlink_user( (int) $user_id );
 			restore_current_blog();
 		}
 	}

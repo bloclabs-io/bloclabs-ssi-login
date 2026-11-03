@@ -8,7 +8,9 @@
  * event from FireFly before acting (see docs/adr/0003-event-consumption.md).
  *
  * Answers: 204 handled or irrelevant (FireFly moves on), 401 bad secret,
- * 503 FireFly could not be asked to confirm (FireFly retries).
+ * 503 FireFly could not be asked to confirm (FireFly retries). An event that
+ * does not decode also answers 204: a retry would not decode it either, so
+ * AttestationProcessor reports it through `bloclabs_ssi_undecodable_event`.
  *
  * @package BlocLabs\SsiLogin
  */
@@ -25,8 +27,6 @@ use BlocLabs\SsiLogin\Support\ClientIp;
 final class WebhookController {
 
 	public const SECRET_HEADER = 'X-Bloclabs-Ssi-Secret';
-
-	private const MAX_EVENTS = 100;
 
 	public function __construct(
 		private readonly Settings $settings,
@@ -78,7 +78,7 @@ final class WebhookController {
 		$events = array_is_list( $body ) ? $body : array( $body );
 
 		try {
-			foreach ( array_slice( $events, 0, self::MAX_EVENTS ) as $event ) {
+			foreach ( $events as $event ) {
 				if ( is_array( $event ) ) {
 					$this->processor->handle_delivery( $event );
 				}

@@ -116,6 +116,11 @@
 			ui.status.textContent = ( r.data && r.data.message ) || cfg.i18n.error;
 			ui.start.hidden = false;
 		} ).catch( () => {
+			// A dropped response: the attempt may still be valid, so retry like a 'not ready yet'.
+			if ( ( tries || 0 ) < COMPLETE_RETRIES ) {
+				window.setTimeout( () => complete( id, me, ( tries || 0 ) + 1 ), 1500 );
+				return;
+			}
 			ui.cancel.disabled = false;
 			say( 'error' );
 			ui.start.hidden = false;

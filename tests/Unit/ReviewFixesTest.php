@@ -12,6 +12,7 @@ namespace BlocLabs\SsiLogin\Tests\Unit;
 use BlocLabs\SsiLogin\Identity\IdentityRepository;
 use BlocLabs\SsiLogin\Rest\PageToken;
 use BlocLabs\SsiLogin\Verifier\PresentationOffer;
+use BlocLabs\SsiLogin\Verifier\VerifierException;
 use PHPUnit\Framework\TestCase;
 
 final class ReviewFixesTest extends TestCase {
@@ -38,11 +39,21 @@ final class ReviewFixesTest extends TestCase {
 
 	public function test_identity_label_never_contains_the_subject(): void {
 		$did   = 'did:key:z6MkhaXgBZDvotDkL5257faiztiGiC2QtKLGpbnnEGta2doK';
-		$label = IdentityRepository::label( $did );
+		$label = IdentityRepository::label( $did, 'key-one' );
 
 		$this->assertMatchesRegularExpression( '/^did:key #[0-9a-f]{8}$/', $label );
 		$this->assertStringNotContainsString( 'z6Mk', $label );
-		$this->assertMatchesRegularExpression( '/^credential #[0-9a-f]{8}$/', IdentityRepository::label( 'https://issuer.example|1234' ) );
+		$this->assertNotSame( $label, IdentityRepository::label( $did, 'key-two' ), 'keyed: a dump without the key cannot confirm a guess' );
+		$this->assertStringNotContainsString( substr( hash( 'sha256', $did ), 0, 8 ), $label );
+		$this->assertMatchesRegularExpression( '/^credential #[0-9a-f]{8}$/', IdentityRepository::label( 'https://issuer.example|1234', 'key-one' ) );
+	}
+
+	public function test_only_recoverable_verifier_errors_are_retried(): void {
+		$this->assertTrue( ( new VerifierException( 'unreachable', 0 ) )->is_transient() );
+		$this->assertTrue( ( new VerifierException( 'not ready', 409 ) )->is_transient() );
+		$this->assertTrue( ( new VerifierException( 'down', 503 ) )->is_transient() );
+		$this->assertFalse( ( new VerifierException( 'gone', 404 ) )->is_transient() );
+		$this->assertFalse( ( new VerifierException( 'bad', 400 ) )->is_transient() );
 	}
 
 	public function test_wallet_schemes_are_normalised(): void {

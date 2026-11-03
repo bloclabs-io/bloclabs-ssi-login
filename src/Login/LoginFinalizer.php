@@ -54,8 +54,13 @@ final class LoginFinalizer {
 		try {
 			$result = $this->verifier->fetch_result( (string) $attempt->verifier_ref );
 		} catch ( VerifierException $e ) {
-			// The bridge may attest a moment before it serves the result, or be briefly down: keep the attempt.
-			return new \WP_Error( self::RETRY, __( 'Still confirming your credential…', 'bloclabs-ssi-login' ), array( 'status' => 503 ) );
+			if ( $e->is_transient() ) {
+				// The bridge may attest a moment before it serves the result, or be briefly down: keep the attempt.
+				return new \WP_Error( self::RETRY, __( 'Still confirming your credential…', 'bloclabs-ssi-login' ), array( 'status' => 503 ) );
+			}
+			// 404 and other definitive answers: the result is gone or never existed.
+			$this->attempts->transition( $attempt, AttemptStatus::Failed );
+			return new \WP_Error( 'bloclabs_ssi_verifier', __( 'The verification result is no longer available. Please start again.', 'bloclabs-ssi-login' ), array( 'status' => 502 ) );
 		}
 
 		// The verifier's answer must match what it attested on chain.
@@ -81,6 +86,7 @@ final class LoginFinalizer {
 
 		$refusal = $this->check_user( $user, $result );
 		if ( null !== $refusal ) {
+			$this->users->undo_provision( $user );
 			$this->attempts->transition( $attempt, AttemptStatus::Failed );
 			return $refusal;
 		}
