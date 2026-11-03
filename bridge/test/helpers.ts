@@ -17,6 +17,7 @@ import { VerifierClient } from '../src/verifier.js';
 
 export const AUTH_TOKEN = 'test-bridge-token-0123456789abcdef0123456789abcdef';
 export const SIGNING_KEY = '0x1111111111111111111111111111111111111111';
+export const BLINDING_SECRET = 'b1'.repeat(32);
 export const ISSUER = 'did:web:issuer.example.com';
 export const VCT = 'https://issuer.example.com/credentials/login';
 
@@ -376,6 +377,7 @@ export function requestBody(overrides: Record<string, unknown> = {}, clockNow = 
   return {
     correlation_id: '3575e334c14dcc31670ded8ad7c600007ccd69a694c8251151b51c8780b97fea',
     nonce: 'wp-nonce-q2F8kZ0',
+    blinding_secret: BLINDING_SECRET,
     query: 'default',
     expires_at: new Date(clockNow + 180_000).toISOString(),
     ...overrides,

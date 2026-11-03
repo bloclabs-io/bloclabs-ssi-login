@@ -27,15 +27,17 @@ final class AttemptRepository {
 
 		$now = time();
 		$row = array(
-			'public_id'      => bin2hex( random_bytes( 16 ) ),
-			'correlation_id' => bin2hex( random_bytes( 32 ) ),
-			'binding_hash'   => $binding_hash,
-			'nonce'          => rtrim( strtr( base64_encode( random_bytes( 32 ) ), '+/', '-_' ), '=' ), // phpcs:ignore WordPress.PHP.DiscouragedPHPFunctions.obfuscation_base64_encode -- base64url of random bytes.
-			'status'         => AttemptStatus::Pending->value,
-			'ip_hash'        => $ip_hash,
-			'redirect_to'    => $redirect_to,
-			'created_at'     => gmdate( 'Y-m-d H:i:s', $now ),
-			'expires_at'     => gmdate( 'Y-m-d H:i:s', $now + $ttl ),
+			'public_id'       => bin2hex( random_bytes( 16 ) ),
+			'correlation_id'  => bin2hex( random_bytes( 32 ) ),
+			'binding_hash'    => $binding_hash,
+			'nonce'           => rtrim( strtr( base64_encode( random_bytes( 32 ) ), '+/', '-_' ), '=' ), // phpcs:ignore WordPress.PHP.DiscouragedPHPFunctions.obfuscation_base64_encode -- base64url of random bytes.
+			// Shared with the verifier only; blinds the subject commitment on chain.
+			'blinding_secret' => bin2hex( random_bytes( 32 ) ),
+			'status'          => AttemptStatus::Pending->value,
+			'ip_hash'         => $ip_hash,
+			'redirect_to'     => $redirect_to,
+			'created_at'      => gmdate( 'Y-m-d H:i:s', $now ),
+			'expires_at'      => gmdate( 'Y-m-d H:i:s', $now + $ttl ),
 		);
 
 		if ( false === $wpdb->insert( Schema::attempts_table(), $row ) ) {

@@ -4,6 +4,7 @@ import { after, before, beforeEach, describe, it } from 'node:test';
 import { ZERO_HASH, presentationHash, sha256Hex, subjectCommitment } from '../src/crypto.js';
 import { idempotencyKey } from '../src/firefly.js';
 import {
+  BLINDING_SECRET,
   credentialData,
   duplicateKey,
   failedSession,
@@ -76,6 +77,8 @@ describe('presentation requests', () => {
       [requestBody({ correlation_id: 'abc' }), 400, 'invalid_request'],
       [requestBody({ correlation_id: undefined }), 400, 'invalid_request'],
       [requestBody({ correlation_id: freshCorrelation(), nonce: '' }), 400, 'invalid_request'],
+      [requestBody({ correlation_id: freshCorrelation(), blinding_secret: undefined }), 400, 'invalid_request'],
+      [requestBody({ correlation_id: freshCorrelation(), blinding_secret: 'tooshort' }), 400, 'invalid_request'],
       [requestBody({ correlation_id: freshCorrelation(), query: 'nope' }), 400, 'unknown_query'],
       [requestBody({ correlation_id: freshCorrelation(), query: '__proto__' }), 400, 'unknown_query'],
       [requestBody({ correlation_id: freshCorrelation(), expires_at: 'yesterday' }), 400, 'invalid_request'],
@@ -160,7 +163,7 @@ describe('presentation requests', () => {
       input: {
         correlationId: '0x' + correlationId,
         result: 1,
-        subjectCommitment: '0x' + subjectCommitment(correlationId, body.subject_id),
+        subjectCommitment: '0x' + subjectCommitment(correlationId, BLINDING_SECRET, body.subject_id),
         presentationHash: '0x' + body.presentation_hash,
       },
       idempotencyKey: idempotencyKey(correlationId),
@@ -289,7 +292,7 @@ describe('presentation requests', () => {
     await t.bridge.idle();
     const result = await t.call('GET', `/v1/presentation-requests/${id}/result`);
     assert.equal((result.body as { subject_id: string }).subject_id, did);
-    assert.equal((t.firefly.invokes[0]!.body['input'] as Record<string, string>)['subjectCommitment'], '0x' + subjectCommitment(correlationId, did));
+    assert.equal((t.firefly.invokes[0]!.body['input'] as Record<string, string>)['subjectCommitment'], '0x' + subjectCommitment(correlationId, BLINDING_SECRET, did));
   });
 
   it('returns every disclosed claim but the registered ones for a query without claims', async () => {

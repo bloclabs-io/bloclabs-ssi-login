@@ -64,7 +64,7 @@ final class LoginFinalizer {
 		}
 
 		// The verifier's answer must match what it attested on chain.
-		$commitment = Attestation::subject_commitment( $attempt->correlation_id, $result->subject_id );
+		$commitment = Attestation::subject_commitment( $attempt->correlation_id, $attempt->blinding_secret, $result->subject_id );
 		if ( null === $attempt->subject_commitment
 			|| ! hash_equals( $attempt->subject_commitment, $commitment )
 			|| null === $attempt->presentation_hash

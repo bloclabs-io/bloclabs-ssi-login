@@ -14,9 +14,14 @@ export function sha256Hex(input: string | Buffer): string {
   return createHash('sha256').update(input).digest('hex');
 }
 
-/** sha256(lowercase hex correlation id ":" subject id), as docs/adr/0004 defines it. */
-export function subjectCommitment(correlationIdHex: string, subjectId: string): string {
-  return sha256Hex(correlationIdHex.toLowerCase() + ':' + subjectId);
+/**
+ * sha256(lowercase hex correlation id ":" blinding secret ":" subject id), as docs/adr/0004
+ * defines it. The correlation id is public on chain; the blinding secret is random per attempt
+ * and known to WordPress and the bridge only, so nobody can test a guessed subject against
+ * an attestation (#25).
+ */
+export function subjectCommitment(correlationIdHex: string, blindingSecret: string, subjectId: string): string {
+  return sha256Hex(correlationIdHex.toLowerCase() + ':' + blindingSecret + ':' + subjectId);
 }
 
 /**

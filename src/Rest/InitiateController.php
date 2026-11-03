@@ -87,6 +87,7 @@ final class InitiateController extends BrowserController {
 				new PresentationRequest(
 					$attempt->correlation_id,
 					$attempt->nonce,
+					$attempt->blinding_secret,
 					$this->settings->string( 'credential_query' ),
 					$attempt->expires_at
 				)

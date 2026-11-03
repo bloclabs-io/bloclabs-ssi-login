@@ -32,12 +32,16 @@ final class Attestation {
 	}
 
 	/**
-	 * The subject commitment a verifier must emit: sha256(correlation_id || ":" || subject_id).
+	 * The subject commitment a verifier must emit:
+	 * sha256(correlation_id || ":" || blinding_secret || ":" || subject_id).
 	 *
-	 * Salting with the per-attempt correlation id means the same person's
-	 * logins cannot be linked to each other by reading the chain.
+	 * The correlation id is public (it is a topic of the same event), so on its
+	 * own it would let anyone test a guessed subject id against the chain. The
+	 * blinding secret is random per attempt and known to WordPress and the
+	 * bridge only, so the same person's logins cannot be linked, and a guess
+	 * cannot be checked, by reading the chain (#25).
 	 */
-	public static function subject_commitment( string $correlation_id, string $subject_id ): string {
-		return hash( 'sha256', strtolower( $correlation_id ) . ':' . $subject_id );
+	public static function subject_commitment( string $correlation_id, string $blinding_secret, string $subject_id ): string {
+		return hash( 'sha256', strtolower( $correlation_id ) . ':' . $blinding_secret . ':' . $subject_id );
 	}
 }

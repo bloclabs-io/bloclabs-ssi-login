@@ -56,13 +56,17 @@ final class SupportTest extends TestCase {
 		);
 	}
 
-	public function test_subject_commitment_is_salted_per_attempt(): void {
-		$did = 'did:key:z6MkhaXgBZDvotDkL5257faiztiGiC2QtKLGpbnnEGta2doK';
-		$a   = Attestation::subject_commitment( str_repeat( 'ab', 32 ), $did );
-		$b   = Attestation::subject_commitment( str_repeat( 'cd', 32 ), $did );
+	public function test_subject_commitment_is_blinded_per_attempt(): void {
+		$did      = 'did:key:z6MkhaXgBZDvotDkL5257faiztiGiC2QtKLGpbnnEGta2doK';
+		$blinding = str_repeat( '12', 32 );
+		$a        = Attestation::subject_commitment( str_repeat( 'ab', 32 ), $blinding, $did );
+		$b        = Attestation::subject_commitment( str_repeat( 'cd', 32 ), $blinding, $did );
+		$c        = Attestation::subject_commitment( str_repeat( 'ab', 32 ), str_repeat( '34', 32 ), $did );
 
 		$this->assertMatchesRegularExpression( '/^[0-9a-f]{64}$/', $a );
-		$this->assertNotSame( $a, $b, 'the same holder is unlinkable across attempts' );
-		$this->assertSame( $a, Attestation::subject_commitment( str_repeat( 'AB', 32 ), $did ), 'correlation id case does not matter' );
+		$this->assertNotSame( $a, $b, 'the correlation id salts the commitment' );
+		$this->assertNotSame( $a, $c, 'the blinding secret, which never reaches the chain, makes a guessed subject untestable' );
+		$this->assertSame( $a, Attestation::subject_commitment( str_repeat( 'AB', 32 ), $blinding, $did ), 'correlation id case does not matter' );
+		$this->assertSame( hash( 'sha256', str_repeat( 'ab', 32 ) . ':' . $blinding . ':' . $did ), $a, 'the formula the bridge implements too' );
 	}
 }

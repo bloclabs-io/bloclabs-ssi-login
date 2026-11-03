@@ -9,9 +9,10 @@ describe('commitments', () => {
     // The plugin's RealFireFlyEventTest checks the same fixture with its own PHP implementation.
     const fixture = JSON.parse(
       readFileSync(new URL('../../../tests/fixtures/firefly-login-attested.json', import.meta.url), 'utf8'),
-    ) as { correlation: string; subject: string; commitment: string };
-    assert.equal(subjectCommitment(fixture.correlation, fixture.subject), fixture.commitment);
-    assert.equal(subjectCommitment(fixture.correlation.toUpperCase(), fixture.subject), fixture.commitment, 'case of the hex id does not matter');
+    ) as { correlation: string; blinding_secret: string; subject: string; commitment: string };
+    assert.equal(subjectCommitment(fixture.correlation, fixture.blinding_secret, fixture.subject), fixture.commitment);
+    assert.equal(subjectCommitment(fixture.correlation.toUpperCase(), fixture.blinding_secret, fixture.subject), fixture.commitment, 'case of the hex id does not matter');
+    assert.notEqual(subjectCommitment(fixture.correlation, 'c'.repeat(64), fixture.subject), fixture.commitment, 'the blinding secret is part of the commitment');
   });
 
   it('hashes the vp_token map as canonical JSON', () => {

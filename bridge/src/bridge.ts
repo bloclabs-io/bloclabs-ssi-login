@@ -92,6 +92,10 @@ export class Bridge {
     if (typeof nonce !== 'string' || nonce === '' || nonce.length > MAX_NONCE_LENGTH) {
       throw new HttpError(400, 'invalid_request', 'nonce must be a non-empty string');
     }
+    const blindingSecret = typeof body['blinding_secret'] === 'string' ? body['blinding_secret'].toLowerCase() : '';
+    if (!/^[0-9a-f]{64}$/.test(blindingSecret)) {
+      throw new HttpError(400, 'invalid_request', 'blinding_secret must be 64 hex characters');
+    }
     const queryName = body['query'];
     if (typeof queryName !== 'string' || !Object.hasOwn(this.config.queries, queryName)) {
       throw new HttpError(400, 'unknown_query', 'query must name a query configured in the bridge');
@@ -140,6 +144,7 @@ export class Bridge {
       id,
       correlationId,
       nonce,
+      blindingSecret,
       query: queryName,
       expiresAt,
       createdAt: now,
@@ -273,7 +278,7 @@ export class Bridge {
       ? {
           correlationId: request.correlationId,
           result: 1,
-          subjectCommitment: subjectCommitment(request.correlationId, evaluation.subjectId),
+          subjectCommitment: subjectCommitment(request.correlationId, request.blindingSecret, evaluation.subjectId),
           presentationHash: evaluation.presentationHash,
         }
       : {

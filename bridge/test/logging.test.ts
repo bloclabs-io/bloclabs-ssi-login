@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 
-import { AUTH_TOKEN, requestBody, SD_JWT_PRESENTATION, startBridge, successfulSession } from './helpers.js';
+import { AUTH_TOKEN, BLINDING_SECRET, requestBody, SD_JWT_PRESENTATION, startBridge, successfulSession } from './helpers.js';
 
 describe('logging', () => {
   it('logs a whole login without claims, subjects, presentations, nonces or tokens', async () => {
@@ -31,7 +31,7 @@ describe('logging', () => {
       const output = t.logs.join('\n');
       assert.ok(output.includes(id), 'request ids are logged');
       assert.ok(output.includes('decision attested'), 'decisions are logged');
-      for (const secret of ['Ada', 'Lovelace', 'ada@example.com', 'London', subject, SD_JWT_PRESENTATION, 'verifier-nonce', nonce, AUTH_TOKEN, callbackToken, correlationId, 'did:web:issuer.example.com']) {
+      for (const secret of ['Ada', 'Lovelace', 'ada@example.com', 'London', subject, SD_JWT_PRESENTATION, 'verifier-nonce', nonce, BLINDING_SECRET, AUTH_TOKEN, callbackToken, correlationId, 'did:web:issuer.example.com']) {
         assert.equal(output.includes(secret), false, `logs must not contain ${secret.slice(0, 12)}…`);
       }
     } finally {

@@ -13,13 +13,15 @@ final class PresentationRequest {
 
 	/**
 	 * @param string $correlation_id Echoed on chain in the LoginAttested event.
-	 * @param string $nonce          Must be bound into the presentation (key-binding JWT / device signature).
-	 * @param string $query          Name of a credential query (DCQL) configured in the verifier.
-	 * @param int    $expires_at     Unix time after which the verifier must refuse responses.
+	 * @param string $nonce           Offered as the OpenID4VP nonce; the verifier may use its own.
+	 * @param string $blinding_secret Per-attempt secret that blinds the subject commitment; never on chain.
+	 * @param string $query           Name of a credential query (DCQL) configured in the verifier.
+	 * @param int    $expires_at      Unix time after which the verifier must refuse responses.
 	 */
 	public function __construct(
 		public readonly string $correlation_id,
 		public readonly string $nonce,
+		public readonly string $blinding_secret,
 		public readonly string $query,
 		public readonly int $expires_at,
 	) {}
@@ -29,10 +31,11 @@ final class PresentationRequest {
 	 */
 	public function to_array(): array {
 		return array(
-			'correlation_id' => $this->correlation_id,
-			'nonce'          => $this->nonce,
-			'query'          => $this->query,
-			'expires_at'     => gmdate( 'Y-m-d\TH:i:s\Z', $this->expires_at ),
+			'correlation_id'  => $this->correlation_id,
+			'nonce'           => $this->nonce,
+			'blinding_secret' => $this->blinding_secret,
+			'query'           => $this->query,
+			'expires_at'      => gmdate( 'Y-m-d\TH:i:s\Z', $this->expires_at ),
 		);
 	}
 }

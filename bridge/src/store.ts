@@ -29,6 +29,8 @@ export interface BridgeRequest {
   id: string;
   correlationId: string;
   nonce: string;
+  /** 64 hex characters from WordPress; enters the subject commitment and nothing else. */
+  blindingSecret: string;
   query: string;
   /** Unix time in milliseconds after which the verifier refuses wallet responses. */
   expiresAt: number;

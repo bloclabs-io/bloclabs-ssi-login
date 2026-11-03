@@ -1,6 +1,6 @@
 # ADR 0004: Attest each decision with a contract event
 
-**Status:** accepted, 2026-11-03
+**Status:** accepted, 2026-11-03; amended 2026-11-03 (blinding secret, #25)
 
 ## Question
 
@@ -23,7 +23,11 @@ delivers.
 
 Only commitments go on chain:
 - `correlationId`: random per attempt;
-- `subjectCommitment = sha256(hex(correlationId) ":" subjectId)`, so one person's logins cannot be linked;
+- `subjectCommitment = sha256(hex(correlationId) ":" blindingSecret ":" subjectId)`, where `blindingSecret` is a
+  random per-attempt secret that WordPress generates, stores on the attempt and shares with the bridge only. It
+  never reaches the chain or the browser. The correlation id alone would not do: it is a topic of the same event,
+  so with it anyone could test guessed subject ids (a `did:web`, DIDs from registries) against every attestation.
+  With the secret, one person's logins cannot be linked and a guess cannot be checked by reading the chain (#25);
 - `presentationHash = sha256(vp_token)`.
 
 ## Consequences

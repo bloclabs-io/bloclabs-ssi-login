@@ -2,7 +2,8 @@
 /**
  * Decodes an event captured from a real FireFly v1.5.0 node after one call to
  * SsiLoginAttestor.attest(), and checks the commitment a verifier written in
- * another language computed (Python hashlib) against the plugin's own.
+ * another language computed (the bridge, bridge/test/crypto.test.ts, checks
+ * the same fixture) against the plugin's own.
  *
  * @package BlocLabs\SsiLogin
  */
@@ -32,7 +33,7 @@ final class RealFireFlyEventTest extends TestCase {
 		$this->assertSame( $fixture['commitment'], $a->subject_commitment );
 		$this->assertSame(
 			$a->subject_commitment,
-			Attestation::subject_commitment( $a->correlation_id, $fixture['subject'] ),
+			Attestation::subject_commitment( $a->correlation_id, $fixture['blinding_secret'], $fixture['subject'] ),
 			'the verifier and WordPress compute the same commitment'
 		);
 		$this->assertStringStartsWith( '0x', (string) $a->tx_ref );
