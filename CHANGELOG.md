@@ -13,4 +13,5 @@
   binding cookie follows the home URL's scheme; network activation is refused; and smaller fixes.
 - One reviewer per pull request (founder, 2026-11-03): Codex reviews every PR when it opens, with its security
   review; the Claude Code Review workflow runs only when a PR gets the `claude-review` label. `AGENTS.md` holds the
-  rules and roles for every coding agent and Codex's review rules. Repository process only, no code change.
+  rules and roles for every coding agent and Codex's review rules; its "Who does what" section is the single place
+  for roles (Fable writes the code here). Repository process only, no code change.

@@ -4,13 +4,16 @@ Guidance for cloud coding and review agents (Codex, Grok in Cursor, Claude) in *
 
 **This repository is public.** Never commit a secret, a hostname or an IP address of blocLabs infrastructure.
 
-## Who does what (founder, 2026-11-03)
+## Who does what
 
-- **Cloud coders** (Grok in Cursor, Codex) write the code on a branch and open a pull request. One coder per issue.
-- **Codex reviews** each pull request once, automatically, when it opens, with its security review. The coder fixes P0 and P1 findings on the same branch. Comment `@codex review` to re-check a fix.
-- **claude[bot]** reviews only on request: add the `claude-review` label to the pull request.
+This section is the only place that defines roles in this repository; the claude.ai project instructions just point here. Britney edits it when the founder changes a role.
+
+- **Fable** (works as `bloclabs-io`) writes the code here, because the plugin and its bridge are new and security-heavy: one branch and one pull request per issue.
+- **Another coder** (Britney, Codex, or Grok in Cursor) works only on an issue that Britney or the founder assigns to it, and the issue says so. One coder per issue.
+- **Codex reviews** every pull request once, automatically, when it opens or is marked ready, with its security review. The author fixes P0 and P1 findings on the same branch; comment `@codex review` to re-check a fix.
+- **claude[bot]** reviews only when the pull request gets the `claude-review` label.
 - **Britney** (`bloclabs-britney`) tests, merges and deploys. The founder approves releases and anything public.
-- Agents never merge, tag, release, deploy, or touch a server, a secret or production data.
+- Agents other than Britney never merge, tag, release, deploy, or touch a server, a secret or production data.
 
 ## Pull requests
 
