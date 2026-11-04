@@ -31,9 +31,26 @@ final class Schema {
 	/**
 	 * Runs on every load but costs one autoloaded option read when nothing changed.
 	 */
-	public static function maybe_upgrade(): void {
-		if ( get_option( self::VERSION_OPTION ) !== self::VERSION ) {
+	public static function maybe_upgrade(): bool {
+		if ( get_option( self::VERSION_OPTION ) === self::VERSION ) {
+			return true;
+		}
+		add_action( 'admin_notices', array( self::class, 'notice' ) );
+		if ( (int) get_option( 'bloclabs_ssi_schema_retry_after', 0 ) > time() ) {
+			return false;
+		}
+		update_option( 'bloclabs_ssi_schema_retry_after', time() + 300, false );
+		try {
 			self::install();
+			return true;
+		} catch ( \RuntimeException $e ) {
+			return false;
+		}
+	}
+
+	public static function notice(): void {
+		if ( get_option( self::VERSION_OPTION ) !== self::VERSION && current_user_can( is_multisite() ? 'manage_network_options' : 'manage_options' ) ) {
+			echo '<div class="notice notice-error"><p>' . esc_html__( 'SSI Login could not install its database tables. Check database CREATE/ALTER permissions. Credential login is unavailable; installation retries after five minutes.', 'bloclabs-ssi-login' ) . '</p></div>';
 		}
 	}
 
@@ -92,9 +109,13 @@ final class Schema {
 ) {$charset};"
 		);
 
-		// Record the version only when both tables exist, so a failed CREATE is retried on the next load.
+		// A failed CREATE must fail activation as well as leave the version unchanged.
 		if ( self::table_exists( $attempts ) && self::table_exists( $ids ) ) {
 			update_option( self::VERSION_OPTION, self::VERSION, true );
+			delete_option( 'bloclabs_ssi_schema_retry_after' );
+		} else {
+			update_option( 'bloclabs_ssi_schema_retry_after', time() + 300, false );
+			throw new \RuntimeException( 'SSI Login could not create its database tables. Check database permissions.' );
 		}
 	}
 

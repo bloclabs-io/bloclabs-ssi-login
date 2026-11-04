@@ -15,6 +15,7 @@ contract SsiLoginAttestor {
     uint8 public constant RESULT_REJECTED = 2;
 
     address public owner;
+    address public pendingOwner;
     mapping(address => bool) public isVerifier;
 
     event LoginAttested(
@@ -26,6 +27,8 @@ contract SsiLoginAttestor {
     );
     event VerifierSet(address indexed verifier, bool allowed);
     event OwnershipTransferred(address indexed previousOwner, address indexed newOwner);
+
+    event OwnershipTransferStarted(address indexed previousOwner, address indexed proposedOwner);
 
     error NotOwner();
     error NotVerifier();
@@ -66,7 +69,14 @@ contract SsiLoginAttestor {
 
     function transferOwnership(address newOwner) external onlyOwner {
         if (newOwner == address(0)) revert ZeroAddress();
-        emit OwnershipTransferred(owner, newOwner);
-        owner = newOwner;
+        pendingOwner = newOwner;
+        emit OwnershipTransferStarted(owner, newOwner);
+    }
+
+    function acceptOwnership() external {
+        if (msg.sender != pendingOwner) revert NotOwner();
+        emit OwnershipTransferred(owner, msg.sender);
+        owner = msg.sender;
+        pendingOwner = address(0);
     }
 }

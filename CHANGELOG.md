@@ -2,6 +2,8 @@
 
 ## 0.1.0-dev (unreleased)
 
+- Installation and login robustness (#32): fail activation when tables cannot be created, throttle upgrade retries, clear stale wallet prompts on lost bindings, keep long wallet URLs usable when QR encoding fails, use same-origin REST URLs, and require two-step attestor ownership transfer.
+
 - `wp bloclabs-ssi subscribe` takes the webhook address as `--webhook-url`. It used to declare `--url`, which WP-CLI
   keeps for itself as its global site-URL option, so the command never received it and subscribed FireFly to the
   site's public REST URL regardless (#39).

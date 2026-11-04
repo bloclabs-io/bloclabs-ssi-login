@@ -253,6 +253,7 @@ abstract class IntegrationTestCase extends \WP_UnitTestCase {
 		$attempts = Schema::attempts_table();
 		$found    = $wpdb->get_var( $wpdb->prepare( 'SHOW TABLES LIKE %s', $wpdb->esc_like( $attempts ) ) ); // phpcs:ignore WordPress.DB.DirectDatabaseQuery
 		if ( $found !== $attempts || get_option( Schema::VERSION_OPTION ) !== Schema::VERSION ) {
+			$this->use_real_tables();
 			Schema::install();
 		}
 	}

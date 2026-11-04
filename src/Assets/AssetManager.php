@@ -30,6 +30,18 @@ final class AssetManager {
 
 	public function __construct( private readonly Settings $settings ) {}
 
+	/** Keep browser REST requests on wp-login.php's origin, including scheme and port. */
+	public function rest_base(): string {
+		$rest = rest_url( Routes::NAMESPACE . '/' );
+		$site = site_url();
+		foreach ( array( PHP_URL_SCHEME, PHP_URL_HOST, PHP_URL_PORT ) as $part ) {
+			if ( wp_parse_url( $rest, $part ) !== wp_parse_url( $site, $part ) ) {
+				return site_url( 'index.php?rest_route=/' . Routes::NAMESPACE . '/' );
+			}
+		}
+		return $rest;
+	}
+
 	public function enqueue_login(): void {
 		$deps = array();
 		if ( is_readable( PLUGIN_DIR . '/assets/vendor/qrcode.js' ) ) {
@@ -55,7 +67,7 @@ final class AssetManager {
 			self::HANDLE,
 			'window.bloclabsSsi = ' . wp_json_encode(
 				array(
-					'restBase'    => esc_url_raw( rest_url( Routes::NAMESPACE . '/' ) ),
+					'restBase'    => esc_url_raw( $this->rest_base() ),
 					'token'       => PageToken::create(),
 					'tokenHeader' => BrowserController::TOKEN_HEADER,
 					'redirectTo'  => $redirect,
