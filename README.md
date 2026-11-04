@@ -30,8 +30,8 @@ flowchart LR
 - **Provable logins.** Each decision is an on-chain event signed by an authorised verifier, so it can be audited
   later without trusting the web server's logs. Per-attempt blinded commitments keep one person's logins unlinkable
   on the chain.
-- **Verifiable agents.** Software agents can hold credentials too. The same flow lets an AI agent prove who it is
-  and who it acts for, and leaves an attested trail of what it logged into.
+- **Verifiable agents (planned).** Software agents can hold credentials too. The same flow is designed to let them
+  prove who they are and who they act for (roadmap 0.4).
 
 ## How it works
 
@@ -66,12 +66,15 @@ The full flow, with every FireFly call, is in [docs/FIREFLY-FLOW.md](docs/FIREFL
 - An OpenID4VP verifier behind the [bridge API](docs/BRIDGE-API.md): the reference bridge in [`bridge/`](bridge/)
   with [walt.id verifier-api2](https://github.com/walt-id/waltid-identity) 1.2.0 (Node 22 for the bridge, a JVM
   container for the verifier)
+- On multisite: activate it on each site (network activation is refused), and only a network administrator
+  (`manage_network_options`) can open and save the settings.
 
 ## Development
 
 ```bash
 composer install
 composer test    # PHPUnit
+composer test:integration   # WordPress integration suite (PHPUnit 9, needs MySQL)
 composer phpcs   # WordPress coding standards
 npm install && npm run vendor   # optional: copies the QR encoder into assets/vendor/
 cd bridge && npm ci && npm test  # the verifier bridge (Node 22): build and tests
@@ -85,9 +88,9 @@ Without PHP locally: `docker run --rm -v "$PWD:/app" -w /app composer:2 sh -c "c
 - **0.2** Reference verifier bridge on [walt.id verifier-api2](https://github.com/walt-id/waltid-identity)
   (built: [`bridge/`](bridge/)), and a one-command Docker demo (WordPress, FireFly, Besu, verifier) (open).
 - **0.3** "Link a credential" on the profile screen; same-device login through the browser's
-  [Digital Credentials API](https://www.w3.org/TR/digital-credentials/); integration tests on `wp-env`.
+  [Digital Credentials API](https://www.w3.org/TR/digital-credentials/); integration tests on `wp-env`, in addition to the current CI suite.
 - **0.4** On-chain trusted-issuer registry; agent login that issues an application token instead of a cookie.
-- **1.0** External security review, WordPress.org listing.
+- **1.0** External security review, WordPress.org listing (founder decision).
 
 ## Security
 
