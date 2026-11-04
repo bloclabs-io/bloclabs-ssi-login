@@ -15,28 +15,75 @@ final class ClientIp {
 
 	/**
 	 * The visitor's address: REMOTE_ADDR, or the configured proxy header.
+	 *
+	 * A missing header means the request did not come through the proxy, so
+	 * REMOTE_ADDR is the client. A header that cannot name the client (fewer
+	 * entries than trusted proxies, or not an address) yields null, and the
+	 * caller refuses the request rather than rate-limit it on a guess.
 	 */
 	public static function address( Settings $settings ): ?string {
 		$key = $settings->string( 'client_ip_header' );
-		$raw = '' !== $key && isset( $_SERVER[ $key ] ) ? (string) $_SERVER[ $key ] : (string) ( $_SERVER['REMOTE_ADDR'] ?? '' ); // phpcs:ignore WordPress.Security.ValidatedSanitizedInput -- validated as an IP below.
-		// A forwarded-for list: the left-most entry is the client.
-		$ip = trim( explode( ',', $raw )[0] );
+		$raw = (string) ( $_SERVER['REMOTE_ADDR'] ?? '' ); // phpcs:ignore WordPress.Security.ValidatedSanitizedInput -- validated as an IP below.
+		$ip  = false !== filter_var( $raw, FILTER_VALIDATE_IP ) ? $raw : null;
+		if ( '' !== $key && isset( $_SERVER[ $key ] ) ) {
+			$ip = self::forwarded( (string) $_SERVER[ $key ], $settings->int( 'client_ip_proxies' ) ); // phpcs:ignore WordPress.Security.ValidatedSanitizedInput -- validated in forwarded().
+		}
 
 		/**
-		 * Override the visitor IP (for proxies the header setting cannot describe).
+		 * Override the visitor IP (for proxies the header settings cannot describe).
 		 *
 		 * @param string|null $ip
 		 */
-		$ip = apply_filters( 'bloclabs_ssi_client_ip', false !== filter_var( $ip, FILTER_VALIDATE_IP ) ? $ip : null );
+		$ip = apply_filters( 'bloclabs_ssi_client_ip', $ip );
 		return is_string( $ip ) && '' !== $ip ? $ip : null;
 	}
 
 	/**
-	 * Keyed hash of the visitor IP: rate limiting without storing addresses.
+	 * The client entry of a forwarded-for header.
+	 *
+	 * Every proxy appends the address it saw, so the left-most entries are
+	 * whatever the sender wrote and only the last $proxies entries can be
+	 * trusted: the client is $proxies entries from the right. A single-valued
+	 * header (CF-Connecting-IP, X-Real-IP) is the one-proxy case.
+	 *
+	 * @param int $proxies Trusted proxies that append to the header; at least one.
+	 */
+	public static function forwarded( string $header, int $proxies ): ?string {
+		$entries = array_map( 'trim', explode( ',', $header ) );
+		$index   = count( $entries ) - max( 1, $proxies );
+		if ( $index < 0 ) {
+			return null;
+		}
+		$ip = $entries[ $index ];
+		return false !== filter_var( $ip, FILTER_VALIDATE_IP ) ? $ip : null;
+	}
+
+	/**
+	 * Keyed hash of the client, for rate limiting without storing addresses.
 	 */
 	public static function hash( Settings $settings ): ?string {
 		$ip = self::address( $settings );
-		return null === $ip ? null : hash_hmac( 'sha256', $ip, $settings->subject_key() );
+		return null === $ip ? null : hash_hmac( 'sha256', self::bucket( $ip ), $settings->subject_key() );
+	}
+
+	/**
+	 * What the rate limit counts as one client: an IPv4 address, or an IPv6
+	 * /64, the prefix one subscriber or server holds and can rotate addresses
+	 * within. An IPv4-mapped IPv6 address (::ffff:a.b.c.d) is its IPv4 address.
+	 */
+	public static function bucket( string $ip ): string {
+		$bin = @inet_pton( $ip ); // phpcs:ignore WordPress.PHP.NoSilencedErrors -- invalid input returns false.
+		if ( false === $bin ) {
+			return $ip;
+		}
+		if ( 16 === strlen( $bin ) ) {
+			if ( str_starts_with( $bin, "\0\0\0\0\0\0\0\0\0\0\xff\xff" ) ) {
+				$bin = substr( $bin, 12 );
+			} else {
+				return inet_ntop( substr( $bin, 0, 8 ) . str_repeat( "\0", 8 ) ) . '/64';
+			}
+		}
+		return (string) inet_ntop( $bin );
 	}
 
 	/**

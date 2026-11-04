@@ -56,11 +56,18 @@ final class Settings {
 			// A named credential query the verifier knows (DCQL lives in the verifier, not in WordPress).
 			'credential_query'     => 'default',
 			'attempt_ttl'          => 180,
-			// Login attempts one client IP may open per 10 minutes, whatever became of them.
+			// Login attempts one client may open per 10 minutes, whatever became of them.
+			// A client is an IPv4 address or an IPv6 /64.
 			'max_pending_per_ip'   => 10,
-			// $_SERVER key holding the visitor IP behind a trusted proxy, e.g. HTTP_CF_CONNECTING_IP. Empty: REMOTE_ADDR.
-			// Only set it when the origin is unreachable except through that proxy; otherwise the header is spoofable.
+			// Login attempts all clients together may open per 10 minutes: the verifier and the table see no more.
+			'max_pending_total'    => 500,
+			// $_SERVER key holding the visitor IP behind a trusted proxy, e.g. HTTP_CF_CONNECTING_IP or
+			// HTTP_X_FORWARDED_FOR. Empty: REMOTE_ADDR. Only set it when the origin is unreachable except
+			// through that proxy; otherwise the header is spoofable.
 			'client_ip_header'     => '',
+			// Trusted proxies that append their peer to that header: the client is this many entries from
+			// the right. The left-most entry is whatever the sender wrote.
+			'client_ip_proxies'    => 1,
 			'linking_policy'       => self::LINK_ONLY,
 			'default_role'         => 'subscriber',
 		);

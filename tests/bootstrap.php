@@ -70,6 +70,26 @@ if ( ! function_exists( 'add_filter' ) ) {
 		return true;
 	}
 }
+if ( ! function_exists( 'wp_unslash' ) ) {
+	function wp_unslash( $value ) {
+		return is_array( $value ) ? array_map( 'wp_unslash', $value ) : ( is_string( $value ) ? stripslashes( $value ) : $value );
+	}
+}
+if ( ! function_exists( 'absint' ) ) {
+	function absint( $maybeint ): int {
+		return abs( (int) $maybeint );
+	}
+}
+if ( ! function_exists( 'esc_url_raw' ) ) {
+	function esc_url_raw( $url, $protocols = null ) { // phpcs:ignore Generic.CodeAnalysis.UnusedFunctionParameter
+		return (string) $url;
+	}
+}
+if ( ! function_exists( 'sanitize_text_field' ) ) {
+	function sanitize_text_field( $str ) {
+		return trim( strip_tags( (string) $str ) ); // phpcs:ignore WordPress.WP.AlternativeFunctions.strip_tags_strip_tags
+	}
+}
 if ( ! function_exists( 'add_options_page' ) ) {
 	function add_options_page( $page_title, $menu_title, $capability, $menu_slug, $callback = '', $position = null ) { // phpcs:ignore Generic.CodeAnalysis.UnusedFunctionParameter
 		$GLOBALS['bloclabs_ssi_test_options_page'] = array(

@@ -15,7 +15,7 @@ namespace BlocLabs\SsiLogin\Database;
 
 final class Schema {
 
-	public const VERSION        = '2';
+	public const VERSION        = '3';
 	public const VERSION_OPTION = 'bloclabs_ssi_db_version';
 
 	public static function attempts_table(): string {
@@ -72,7 +72,8 @@ final class Schema {
   UNIQUE KEY public_id (public_id),
   UNIQUE KEY correlation_id (correlation_id),
   KEY status_expires (status,expires_at),
-  KEY ip_created (ip_hash,created_at)
+  KEY ip_created (ip_hash,created_at),
+  KEY created (created_at)
 ) {$charset};"
 		);
 

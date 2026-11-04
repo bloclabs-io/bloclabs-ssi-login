@@ -9,10 +9,17 @@ declare(strict_types=1);
 
 namespace BlocLabs\SsiLogin\Tests\Integration;
 
+use BlocLabs\SsiLogin\Plugin;
+use BlocLabs\SsiLogin\Support\ClientIp;
 use BlocLabs\SsiLogin\Tests\Integration\Support\VerifierFake;
 use BlocLabs\SsiLogin\Verifier\VerifierException;
 
 final class InitiateRouteTest extends IntegrationTestCase {
+
+	protected function tearDown(): void {
+		unset( $_SERVER['HTTP_X_FORWARDED_FOR'] );
+		parent::tearDown();
+	}
 
 	public function test_page_token_is_required(): void {
 		$missing = $this->dispatch( 'POST', '/initiate', array(), array(), false );
@@ -101,6 +108,131 @@ final class InitiateRouteTest extends IntegrationTestCase {
 		$other                  = $this->dispatch( 'POST', '/initiate' );
 		$this->assert_http( 201, $other );
 		$this->assertSame( 3, $this->attempt_count() );
+	}
+
+	/**
+	 * M2 (#26): proxies append their peer to X-Forwarded-For, so a sender who
+	 * writes a fresh first entry each time must still land in one bucket.
+	 */
+	public function test_a_forged_forwarded_for_entry_does_not_escape_the_limit(): void {
+		$this->configure(
+			array(
+				'max_pending_per_ip' => 2,
+				'client_ip_header'   => 'HTTP_X_FORWARDED_FOR',
+			)
+		);
+
+		foreach ( array( '10.0.0.1', '10.0.0.2' ) as $forged ) {
+			$_SERVER['HTTP_X_FORWARDED_FOR'] = $forged . ', 203.0.113.50';
+			$this->assert_http( 201, $this->dispatch( 'POST', '/initiate' ) );
+		}
+
+		$_SERVER['HTTP_X_FORWARDED_FOR'] = '10.0.0.3, 203.0.113.50';
+		$limited                         = $this->dispatch( 'POST', '/initiate' );
+		$this->assert_http( 429, $limited );
+		$this->assertSame( 'bloclabs_ssi_rate_limited', $this->error_code( $limited ) );
+		$this->assertSame( 2, $this->attempt_count() );
+
+		// Naming a victim first does not charge the victim: the victim's own requests still go through.
+		$_SERVER['HTTP_X_FORWARDED_FOR'] = '203.0.113.51';
+		$this->assert_http( 201, $this->dispatch( 'POST', '/initiate' ) );
+		$this->assertSame( 3, $this->attempt_count() );
+	}
+
+	public function test_a_forwarded_header_that_cannot_name_the_client_is_refused(): void {
+		$this->configure(
+			array(
+				'client_ip_header'  => 'HTTP_X_FORWARDED_FOR',
+				'client_ip_proxies' => 2,
+			)
+		);
+
+		$_SERVER['HTTP_X_FORWARDED_FOR'] = '203.0.113.50';
+		$response                        = $this->dispatch( 'POST', '/initiate' );
+		$this->assert_http( 503, $response );
+		$this->assertSame( 'bloclabs_ssi_unavailable', $this->error_code( $response ) );
+		$this->assertSame( 0, $this->attempt_count() );
+		$this->assertSame( 0, VerifierFake::instance()->creates );
+
+		$_SERVER['HTTP_X_FORWARDED_FOR'] = '203.0.113.50, 192.0.2.10';
+		$this->assert_http( 201, $this->dispatch( 'POST', '/initiate' ) );
+	}
+
+	/**
+	 * L19 (#26): one IPv6 /64 is one client.
+	 */
+	public function test_addresses_in_one_ipv6_prefix_share_the_limit(): void {
+		$this->configure( array( 'max_pending_per_ip' => 2 ) );
+
+		$_SERVER['REMOTE_ADDR'] = '2001:db8:1:2::1';
+		$this->assert_http( 201, $this->dispatch( 'POST', '/initiate' ) );
+		$_SERVER['REMOTE_ADDR'] = '2001:db8:1:2:ffff::2';
+		$this->assert_http( 201, $this->dispatch( 'POST', '/initiate' ) );
+
+		$_SERVER['REMOTE_ADDR'] = '2001:db8:1:2::3';
+		$limited                = $this->dispatch( 'POST', '/initiate' );
+		$this->assert_http( 429, $limited );
+		$this->assertSame( 'bloclabs_ssi_rate_limited', $this->error_code( $limited ) );
+
+		$_SERVER['REMOTE_ADDR'] = '2001:db8:1:3::1';
+		$this->assert_http( 201, $this->dispatch( 'POST', '/initiate' ) );
+		$this->assertSame( 3, $this->attempt_count() );
+	}
+
+	/**
+	 * L19 (#26): the site-wide cap holds whatever the addresses.
+	 */
+	public function test_the_site_wide_cap_counts_every_client(): void {
+		$this->configure(
+			array(
+				'max_pending_per_ip' => 10,
+				'max_pending_total'  => 2,
+			)
+		);
+
+		$_SERVER['REMOTE_ADDR'] = '203.0.113.21';
+		$this->assert_http( 201, $this->dispatch( 'POST', '/initiate' ) );
+		$_SERVER['REMOTE_ADDR'] = '203.0.113.22';
+		$this->assert_http( 201, $this->dispatch( 'POST', '/initiate' ) );
+
+		$_SERVER['REMOTE_ADDR'] = '203.0.113.23';
+		$limited                = $this->dispatch( 'POST', '/initiate' );
+		$this->assert_http( 429, $limited );
+		$this->assertSame( 'bloclabs_ssi_rate_limited', $this->error_code( $limited ) );
+		$this->assertSame( 2, $this->attempt_count() );
+		$this->assertSame( 2, VerifierFake::instance()->creates );
+	}
+
+	/**
+	 * L18 (#26): after the insert, an attempt's rank in the window decides, so
+	 * concurrent inserts that all passed the pre-check cannot all pass.
+	 */
+	public function test_recent_counts_rank_attempts_by_id(): void {
+		$attempts               = Plugin::instance()->attempts();
+		$settings               = Plugin::instance()->settings();
+		$a                      = (string) ClientIp::hash( $settings );
+		$_SERVER['REMOTE_ADDR'] = '203.0.113.11';
+		$b                      = (string) ClientIp::hash( $settings );
+		$this->assertNotSame( $a, $b );
+
+		$first  = $attempts->open( str_repeat( '1', 64 ), $a, 180, null );
+		$second = $attempts->open( str_repeat( '2', 64 ), $a, 180, null );
+		$third  = $attempts->open( str_repeat( '3', 64 ), $b, 180, null );
+		$fourth = $attempts->open( str_repeat( '4', 64 ), $a, 180, null );
+
+		$this->assertSame( 3, $attempts->count_recent( 600, $a ) );
+		$this->assertSame( 1, $attempts->count_recent( 600, $b ) );
+		$this->assertSame( 4, $attempts->count_recent( 600 ) );
+
+		$this->assertSame( 1, $attempts->count_recent( 600, $a, $first ) );
+		$this->assertSame( 2, $attempts->count_recent( 600, $a, $second ) );
+		$this->assertSame( 2, $attempts->count_recent( 600, $a, $third ), 'another client\'s row does not count' );
+		$this->assertSame( 3, $attempts->count_recent( 600, $a, $fourth ) );
+		$this->assertSame( 3, $attempts->count_recent( 600, null, $third ) );
+
+		$this->backdate( $first->public_id, array( 'created_at' => gmdate( 'Y-m-d H:i:s', time() - 601 ) ) );
+		$this->assertSame( 2, $attempts->count_recent( 600, $a ), 'outside the window' );
+		$this->assertSame( 3, $attempts->count_recent( 600 ) );
 	}
 
 	private function only_attempt_status(): string {

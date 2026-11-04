@@ -1,6 +1,6 @@
 <?php
 /**
- * Regression tests for the settings page capability (#27).
+ * Regression tests for the settings page: capability (#27), numeric bounds (#26).
  *
  * @package BlocLabs\SsiLogin
  */
@@ -18,11 +18,13 @@ final class SettingsPageTest extends TestCase {
 	private const SAVE_FILTER = 'option_page_capability_bloclabs-ssi-login';
 
 	protected function setUp(): void {
-		$GLOBALS['bloclabs_ssi_test_hooks'] = array();
+		$GLOBALS['bloclabs_ssi_test_hooks']   = array();
+		$GLOBALS['bloclabs_ssi_test_options'] = array();
 		unset( $GLOBALS['bloclabs_ssi_test_options_page'] );
 	}
 
 	protected function tearDown(): void {
+		$GLOBALS['bloclabs_ssi_test_options'] = array();
 		unset( $GLOBALS['bloclabs_ssi_test_multisite'], $GLOBALS['bloclabs_ssi_test_options_page'] );
 	}
 
@@ -63,5 +65,52 @@ final class SettingsPageTest extends TestCase {
 
 		$GLOBALS['bloclabs_ssi_test_multisite'] = false;
 		$this->assertSame( 'manage_options', $filter( 'manage_options' ) );
+	}
+
+	/**
+	 * A cap of 0 would refuse every login and 0 proxies would index past the
+	 * header, so the form cannot save them; nor an unbounded lifetime or cap.
+	 */
+	public function test_the_numeric_settings_are_bounded(): void {
+		$page = new SettingsPage( new Settings() );
+
+		$low = $page->sanitize(
+			array(
+				'attempt_ttl'        => '5',
+				'max_pending_per_ip' => '0',
+				'max_pending_total'  => '0',
+				'client_ip_proxies'  => '0',
+			)
+		);
+		$this->assertSame( 60, $low['attempt_ttl'] );
+		$this->assertSame( 1, $low['max_pending_per_ip'] );
+		$this->assertSame( 10, $low['max_pending_total'] );
+		$this->assertSame( 1, $low['client_ip_proxies'] );
+
+		$high = $page->sanitize(
+			array(
+				'attempt_ttl'        => '99999',
+				'max_pending_per_ip' => '99999',
+				'max_pending_total'  => '9999999',
+				'client_ip_proxies'  => '99',
+			)
+		);
+		$this->assertSame( 600, $high['attempt_ttl'] );
+		$this->assertSame( 1000, $high['max_pending_per_ip'] );
+		$this->assertSame( 100000, $high['max_pending_total'] );
+		$this->assertSame( 10, $high['client_ip_proxies'] );
+
+		$kept = $page->sanitize(
+			array(
+				'max_pending_per_ip' => '25',
+				'max_pending_total'  => '2000',
+				'client_ip_proxies'  => '2',
+				'client_ip_header'   => ' HTTP_X_FORWARDED_FOR ',
+			)
+		);
+		$this->assertSame( 25, $kept['max_pending_per_ip'] );
+		$this->assertSame( 2000, $kept['max_pending_total'] );
+		$this->assertSame( 2, $kept['client_ip_proxies'] );
+		$this->assertSame( 'HTTP_X_FORWARDED_FOR', $kept['client_ip_header'] );
 	}
 }
