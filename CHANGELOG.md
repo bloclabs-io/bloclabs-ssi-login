@@ -2,6 +2,9 @@
 
 ## 0.1.0-dev (unreleased)
 
+- `wp bloclabs-ssi subscribe` takes the webhook address as `--webhook-url`. It used to declare `--url`, which WP-CLI
+  keeps for itself as its global site-URL option, so the command never received it and subscribed FireFly to the
+  site's public REST URL regardless (#39).
 - README brought up to date (multisite requirements, the integration-test command, agent login marked as planned, the WordPress.org listing as a founder decision). Docs only, no code change.
 - Reference verifier bridge in `bridge/` (TypeScript on Node 22, no runtime dependencies, ADR 0005): the two routes
   of docs/BRIDGE-API.md behind a bearer token; OpenID4VP 1.0 delegated to walt.id verifier-api2 (1.2.0) through its

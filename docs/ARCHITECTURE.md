@@ -135,7 +135,7 @@ created with autoload off. `VERIFIER_AUTH_HEADER` is required: without it creden
 ## Deployment topologies
 
 **A. Everything on one private network (recommended).** WordPress, FireFly and the bridge share a Docker network.
-FireFly delivers webhooks to WordPress's internal address (`wp bloclabs-ssi subscribe --url=http://wordpress/...`),
+FireFly delivers webhooks to WordPress's internal address (`wp bloclabs-ssi subscribe --webhook-url=http://wordpress/...`),
 and the webhook IP allowlist is that network's range. Only WordPress and the bridge's wallet-facing endpoints are
 public.
 

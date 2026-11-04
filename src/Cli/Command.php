@@ -63,9 +63,11 @@ final class Command {
 	 *
 	 * ## OPTIONS
 	 *
-	 * [--url=<url>]
+	 * [--webhook-url=<url>]
 	 * : Where FireFly should POST. Defaults to this site's REST URL; pass an
 	 *   internal address when FireFly reaches WordPress over a private network.
+	 *   (Not `--url`: WP-CLI keeps that global option for itself, so a command
+	 *   never receives it.)
 	 *
 	 * [--name=<name>]
 	 * : Subscription name.
@@ -91,7 +93,7 @@ final class Command {
 		try {
 			$sub = $this->plugin->firefly()->create_webhook_subscription(
 				$assoc['name'] ?? 'bloclabs-ssi-login',
-				$assoc['url'] ?? rest_url( 'bloclabs-ssi/v1/firefly/events' ),
+				$assoc['webhook-url'] ?? rest_url( 'bloclabs-ssi/v1/firefly/events' ),
 				$listener,
 				array( WebhookController::SECRET_HEADER => $secret )
 			);
