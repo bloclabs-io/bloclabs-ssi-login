@@ -9,7 +9,7 @@ Guidance for cloud coding and review agents (Codex, Grok in Cursor, Claude) in *
 This section is the only place that defines roles in this repository; the claude.ai project instructions just point here. Britney edits it when the founder changes a role.
 
 - **Fable** (works as `bloclabs-io`) writes the code here, because the plugin and its bridge are new and security-heavy: one branch and one pull request per issue.
-- **Another coder** (Britney, Codex, or Grok in Cursor) works only on an issue that Britney or the founder assigns to it, and the issue says so. One coder per issue.
+- **Another coder** (Britney, Codex, or Grok in Cursor until about 2026-11-06) works only on an issue that Britney or the founder assigns to it, and the issue says so. One coder per issue.
 - **Codex reviews** every pull request once, automatically, when it opens or is marked ready, with its security review. The author fixes P0 and P1 findings on the same branch; comment `@codex review` to re-check a fix.
 - **claude[bot]** reviews only when the pull request gets the `claude-review` label.
 - **Britney** (`bloclabs-britney`) tests, merges and deploys. The founder approves releases and anything public.
@@ -29,6 +29,7 @@ composer install
 composer test     # PHPUnit, no database
 composer phpcs    # WordPress coding standards
 composer lint     # php -l on every file
+composer test:integration   # WordPress integration suite on PHPUnit 9 (bin/run-integration.sh; WP_VERSION, default 6.6.10)
 ```
 
 ## Code Review Rules
