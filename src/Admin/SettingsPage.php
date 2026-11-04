@@ -79,7 +79,7 @@ final class SettingsPage {
 			'attempt_ttl'          => array( __( 'Request lifetime (seconds)', 'bloclabs-ssi-login' ), 'number', 'general' ),
 			'max_pending_per_ip'   => array( __( 'Login requests per client', 'bloclabs-ssi-login' ), 'number', 'general', __( 'Per 10 minutes, counting failed and expired ones. A client is an IPv4 address or an IPv6 /64.', 'bloclabs-ssi-login' ) ),
 			'max_pending_total'    => array( __( 'Login requests site-wide', 'bloclabs-ssi-login' ), 'number', 'general', __( 'Per 10 minutes, all clients together. Keeps a flood from many addresses off the verifier.', 'bloclabs-ssi-login' ) ),
-			'client_ip_header'     => array( __( 'Client IP header', 'bloclabs-ssi-login' ), 'text', 'general', __( 'e.g. HTTP_CF_CONNECTING_IP or HTTP_X_FORWARDED_FOR. Leave empty unless the site is reachable only through that proxy.', 'bloclabs-ssi-login' ) ),
+			'client_ip_header'     => array( __( 'Client IP header', 'bloclabs-ssi-login' ), 'text', 'general', __( 'e.g. HTTP_CF_CONNECTING_IP or HTTP_X_FORWARDED_FOR. Leave empty unless the site is reachable only through that proxy, and leave it empty when the web server already resolves the client (Apache mod_remoteip, as in the official WordPress Docker image, or nginx real_ip): REMOTE_ADDR is then the client and the header PHP sees has been trimmed.', 'bloclabs-ssi-login' ) ),
 			'client_ip_proxies'    => array( __( 'Proxies that append to it', 'bloclabs-ssi-login' ), 'number', 'general', __( 'The client is this many entries from the right of a comma-separated header. Ignored without a header.', 'bloclabs-ssi-login' ) ),
 			'verifier_url'         => array( __( 'Verifier bridge URL', 'bloclabs-ssi-login' ), 'url', 'verifier' ),
 			'verifier_auth_header' => array( __( 'Verifier Authorization header', 'bloclabs-ssi-login' ), 'secret', 'verifier', __( 'Required: credential login stays off without it. Prefer BLOCLABS_SSI_VERIFIER_AUTH_HEADER in wp-config.php.', 'bloclabs-ssi-login' ) ),
@@ -137,7 +137,8 @@ final class SettingsPage {
 	 * @return array<string, mixed>
 	 */
 	public function sanitize( $input ): array {
-		$input  = is_array( $input ) ? wp_unslash( $input ) : array();
+		// options.php has unslashed the posted values already; unslashing again would eat typed backslashes.
+		$input  = is_array( $input ) ? $input : array();
 		$stored = (array) get_option( Settings::OPTION, array() );
 		// Start from what is stored (known keys only), so settings this form does not show survive a save.
 		$out = array_intersect_key( $stored, Settings::defaults() );
@@ -240,11 +241,47 @@ final class SettingsPage {
 		}
 	}
 
+	/**
+	 * The warning for a configured client IP header this request did not
+	 * carry, or null.
+	 *
+	 * The header setting is for a site reachable only through a proxy that
+	 * sets the header on every request, so an administrator's own request
+	 * should carry it too. When it does not, either the site is reachable
+	 * without the proxy, or the web server resolved the client itself and
+	 * removed the header before PHP saw it: Apache mod_remoteip, which the
+	 * official WordPress Docker image turns on, sets REMOTE_ADDR to the
+	 * client and strips the entries it consumed, and nginx real_ip does the
+	 * same. Both leave a visitor free to send the header and pick the
+	 * address the rate limit counts (#45).
+	 *
+	 * A public REMOTE_ADDR would hint at a resolving server too, but a proxy
+	 * with public addresses (Cloudflare with HTTP_CF_CONNECTING_IP) looks the
+	 * same, so it is not a signal.
+	 *
+	 * @param array<string, mixed> $server $_SERVER, or a stand-in.
+	 */
+	public function client_ip_header_warning( array $server ): ?string {
+		$header = $this->settings->string( 'client_ip_header' );
+		if ( '' === $header || isset( $server[ $header ] ) ) {
+			return null;
+		}
+		return sprintf(
+			/* translators: %s: the configured $_SERVER key, e.g. HTTP_X_FORWARDED_FOR */
+			__( 'This request reached WordPress without the %s header. Either the site is reachable without the proxy that sets it, or the web server resolves the client itself and removes the header before PHP sees it (Apache mod_remoteip, which the official WordPress Docker image turns on, or nginx real_ip). Either way a visitor who sends the header chooses the address the login rate limit counts. If the web server resolves the client, leave the client IP header empty: REMOTE_ADDR is then the client.', 'bloclabs-ssi-login' ),
+			$header
+		);
+	}
+
 	public function render(): void {
 		if ( ! current_user_can( self::capability() ) ) {
 			return;
 		}
 		echo '<div class="wrap"><h1>' . esc_html__( 'SSI Login', 'bloclabs-ssi-login' ) . '</h1>';
+		$warning = $this->client_ip_header_warning( $_SERVER ); // phpcs:ignore WordPress.Security.ValidatedSanitizedInput -- keys are tested for presence only.
+		if ( null !== $warning ) {
+			printf( '<div class="notice notice-warning"><p>%s</p></div>', esc_html( $warning ) );
+		}
 		printf(
 			'<p>%s <code>%s</code></p>',
 			esc_html__( 'FireFly webhook URL:', 'bloclabs-ssi-login' ),

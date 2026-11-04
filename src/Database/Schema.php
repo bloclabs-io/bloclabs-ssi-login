@@ -15,7 +15,7 @@ namespace BlocLabs\SsiLogin\Database;
 
 final class Schema {
 
-	public const VERSION        = '3';
+	public const VERSION        = '4';
 	public const VERSION_OPTION = 'bloclabs_ssi_db_version';
 
 	public static function attempts_table(): string {
@@ -100,7 +100,7 @@ final class Schema {
   subject_hash char(64) NOT NULL,
   user_id bigint(20) unsigned NOT NULL,
   subject_label varchar(191) DEFAULT NULL,
-  issuer varchar(191) DEFAULT NULL,
+  issuer text,
   created_at datetime NOT NULL,
   last_login_at datetime DEFAULT NULL,
   PRIMARY KEY  (id),
