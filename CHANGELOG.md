@@ -15,3 +15,5 @@
   review; the Claude Code Review workflow runs only when a PR gets the `claude-review` label. `AGENTS.md` holds the
   rules and roles for every coding agent and Codex's review rules; its "Who does what" section is the single place
   for roles (Fable writes the code here). Repository process only, no code change.
+- Fix from the Fable review (#27): on multisite, the settings page and its save require `manage_network_options`,
+  so a site administrator cannot point the plugin at another bridge or FireFly, or turn on account creation.

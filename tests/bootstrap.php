@@ -45,3 +45,37 @@ if ( ! function_exists( 'wp_parse_url' ) ) {
 		return parse_url( $url, $component ); // phpcs:ignore WordPress.WP.AlternativeFunctions.parse_url_parse_url
 	}
 }
+if ( ! function_exists( 'is_multisite' ) ) {
+	function is_multisite(): bool {
+		return ! empty( $GLOBALS['bloclabs_ssi_test_multisite'] );
+	}
+}
+if ( ! function_exists( '__' ) ) {
+	function __( $text, $domain = 'default' ) { // phpcs:ignore Generic.CodeAnalysis.UnusedFunctionParameter, WordPress.WP.I18n
+		return $text;
+	}
+}
+
+$GLOBALS['bloclabs_ssi_test_hooks'] = array();
+
+if ( ! function_exists( 'add_action' ) ) {
+	function add_action( string $hook, $callback, int $priority = 10, int $accepted_args = 1 ): bool { // phpcs:ignore Generic.CodeAnalysis.UnusedFunctionParameter
+		$GLOBALS['bloclabs_ssi_test_hooks'][ $hook ] = $callback;
+		return true;
+	}
+}
+if ( ! function_exists( 'add_filter' ) ) {
+	function add_filter( string $hook, $callback, int $priority = 10, int $accepted_args = 1 ): bool { // phpcs:ignore Generic.CodeAnalysis.UnusedFunctionParameter
+		$GLOBALS['bloclabs_ssi_test_hooks'][ $hook ] = $callback;
+		return true;
+	}
+}
+if ( ! function_exists( 'add_options_page' ) ) {
+	function add_options_page( $page_title, $menu_title, $capability, $menu_slug, $callback = '', $position = null ) { // phpcs:ignore Generic.CodeAnalysis.UnusedFunctionParameter
+		$GLOBALS['bloclabs_ssi_test_options_page'] = array(
+			'capability' => $capability,
+			'menu_slug'  => $menu_slug,
+		);
+		return 'settings_page_' . $menu_slug;
+	}
+}

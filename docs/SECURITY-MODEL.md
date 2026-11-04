@@ -25,6 +25,7 @@ What an attacker might try, and what stops them. "Bridge" is the verifier sideca
 | 18 | A log dropped by a chain reorganisation logging someone in. | Events with `removed: true` are ignored (not treated as a rejection, so a re-mined transaction can still verify). On instant-finality chains (QBFT) this does not occur. | `ContractEventDecoder` |
 | 19 | Reading claims from the bridge's result route. | WordPress refuses to start a login unless the bridge Authorization header is set, and the bridge must require it. The result route belongs on the private network; the wallet-facing host serves only OpenID4VP endpoints. | `InitiateController`, BRIDGE-API.md |
 | 20 | A deleted account's credential left pointing at nothing. | Links are removed on `deleted_user` and on removal from a site; a link to a missing user counts as no link. | `Plugin`, `UserResolver` |
+| 21 | A site administrator on multisite pointing the plugin at a bridge and FireFly they run, or turning on account creation, to mint accounts across the network or make WordPress call URLs of their choosing. | On multisite the settings page and its save require `manage_network_options` (through `option_page_capability_bloclabs-ssi-login`), so only network administrators change where WordPress sends requests and which accounts it creates. Keys pinned in `wp-config.php` are out of reach of the form altogether. | `SettingsPage` |
 
 ## Residual risks
 
