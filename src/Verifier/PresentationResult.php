@@ -16,7 +16,7 @@ final class PresentationResult {
 
 	/**
 	 * @param string               $subject_id        Stable holder identifier (a DID, or issuer + sub).
-	 * @param string               $presentation_hash SHA-256 of the presentation as received, hex.
+	 * @param string               $presentation_hash SHA-256 of the canonical JSON of the parsed vp_token, hex.
 	 * @param array<string, mixed> $claims            Disclosed claims (only what the query asked for).
 	 */
 	public function __construct(

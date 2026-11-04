@@ -73,11 +73,15 @@ Response `200`:
   the RFC 9278 thumbprint URI of `cnf.jwk` (`urn:ietf:params:oauth:jwk-thumbprint:sha-256:…`), or the DID behind
   `cnf.kid` without its fragment.
 - `issuer`: the credential issuer, or `null` when the credential names none.
-- `presentation_hash`: lowercase hex SHA-256 of the presentation exactly as received (the `vp_token` value).
-  *Reference bridge:* walt.id records the `vp_token` parsed (the JSON object mapping query ids to presentations),
-  not the bytes the wallet posted, so the bridge hashes that object serialised as canonical JSON (RFC 8785):
-  for one presentation, `sha256('{"<query id>":["<presentation>"]}')`. WordPress compares this value with the chain,
-  and both are written by the bridge, so the definition has to be stable rather than byte-exact.
+- `presentation_hash`: lowercase hex SHA-256 of the RFC 8785 canonical JSON of the `vp_token` as the verifier
+  parsed it: the JSON object that maps each credential-query id to its list of presentations, with object keys
+  sorted, no whitespace and JSON string escaping. For one presentation that is
+  `sha256('{"<credential query id>":["<presentation>"]}')`. It is not a hash of the bytes the wallet posted:
+  walt.id keeps the parsed object, not those bytes, and WordPress only compares this value with the one on chain,
+  both written by the bridge, so the definition has to be stable rather than byte-exact. *Reference bridge:*
+  `canonicalJson()` and `presentationHash()` in `bridge/src/crypto.ts`, pinned by fixed vectors in
+  `bridge/test/crypto.test.ts`, so a verifier upgrade that changes the parsed shape fails a test instead of
+  silently changing the hashes on chain.
 - `claims`: only what the query disclosed. *Reference bridge:* the values at the DCQL claim paths the query asked
   for; for a credential query without `claims`, every disclosed claim except the registered ones.
 
@@ -101,8 +105,9 @@ attempt lifetime plus a minute, then delete them.
 5. Call `attest(correlationId, result, subjectCommitment, presentationHash)` through FireFly, signing with an
    address the contract owner authorised, with an idempotency key derived from `correlation_id`, so that a retried
    call can never attest the same attempt twice (FireFly's `idempotencyKey`; a duplicate answers `409 FF10431`).
-   Rejections are attested too (`result = 2`, commitments may be zero). *Reference bridge:* a wallet's OpenID4VP
-   error response (the holder declined) is a rejection as well, with a zero presentation hash.
+   Rejections are attested too (`result = 2`, commitments may be zero). A wallet's OpenID4VP error response (the
+   holder declined) is a rejection as well, with a zero presentation hash; [FIREFLY-FLOW.md](FIREFLY-FLOW.md) says
+   why it is attested rather than left to expire.
 6. Only then mark the result readable.
 
 ## Verifier callbacks (reference bridge)

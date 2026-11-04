@@ -3,6 +3,7 @@ import { readFileSync } from 'node:fs';
 import { describe, it } from 'node:test';
 
 import { canonicalJson, constantTimeEqual, jwkThumbprint, jwkThumbprintUri, presentationHash, sha256Hex, subjectCommitment } from '../src/crypto.js';
+import { PRESENTATION_HASH_VECTOR, SD_JWT_PRESENTATION } from './helpers.js';
 
 describe('commitments', () => {
   it('matches the commitment the plugin checks, on the event captured from FireFly', () => {
@@ -20,6 +21,16 @@ describe('commitments', () => {
     assert.equal(canonicalJson(token), '{"mdl":["xyz"],"pid":["a~b~c"]}');
     assert.equal(presentationHash(token), sha256Hex('{"mdl":["xyz"],"pid":["a~b~c"]}'));
     assert.equal(presentationHash({ mdl: ['xyz'], pid: ['a~b~c'] }), presentationHash(token), 'key order does not matter');
+  });
+
+  it('reproduces the fixed presentation_hash vectors of docs/BRIDGE-API.md', () => {
+    // Both digests were computed outside the bridge (python hashlib and node:crypto over the
+    // literal canonical strings). A walt.id upgrade that changes the parsed vp_token shape, or
+    // a change to canonicalJson(), must fail here rather than silently change hashes on chain.
+    assert.equal(presentationHash({ login: [SD_JWT_PRESENTATION] }), PRESENTATION_HASH_VECTOR);
+    assert.equal(presentationHash({ pid: ['a~b~c'], mdl: ['xyz'] }), 'a19e9dd5e298f335327c88f8a221b785515d3029e22aca406e8c5d982bb415de');
+    assert.notEqual(presentationHash({ login: [SD_JWT_PRESENTATION + '~'] }), PRESENTATION_HASH_VECTOR, 'the presentation bytes are part of the hash');
+    assert.notEqual(presentationHash({ other: [SD_JWT_PRESENTATION] }), PRESENTATION_HASH_VECTOR, 'the credential query id is part of the hash');
   });
 
   it('canonical JSON drops undefined members and escapes strings like JSON', () => {
