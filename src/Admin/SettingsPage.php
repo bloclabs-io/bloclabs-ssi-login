@@ -5,6 +5,10 @@
  * Values pinned in wp-config.php are shown read-only. Secrets are never
  * printed back: an empty secret field keeps the stored value.
  *
+ * On multisite only a network administrator may view or save the page:
+ * these settings decide which hosts WordPress talks to and which accounts
+ * it creates, which a site administrator must not control.
+ *
  * @package BlocLabs\SsiLogin
  */
 
@@ -23,13 +27,28 @@ final class SettingsPage {
 	public function register(): void {
 		add_action( 'admin_menu', array( $this, 'add_page' ) );
 		add_action( 'admin_init', array( $this, 'register_settings' ) );
+		// options.php checks manage_options on its own; on multisite the save needs the network capability too.
+		add_filter( 'option_page_capability_' . self::PAGE, static fn () => self::capability() );
+	}
+
+	/**
+	 * Who may view and save the settings.
+	 *
+	 * On multisite every site administrator holds manage_options, but the
+	 * verifier and FireFly URLs, the secrets, the listener id, the event mode,
+	 * the linking policy and the client IP header are trust roots: with them a
+	 * site administrator could point WordPress at servers they run and have it
+	 * create accounts network-wide. So there the page needs manage_network_options.
+	 */
+	public static function capability(): string {
+		return is_multisite() ? 'manage_network_options' : 'manage_options';
 	}
 
 	public function add_page(): void {
 		add_options_page(
 			__( 'SSI Login', 'bloclabs-ssi-login' ),
 			__( 'SSI Login', 'bloclabs-ssi-login' ),
-			'manage_options',
+			self::capability(),
 			self::PAGE,
 			array( $this, 'render' )
 		);
@@ -206,7 +225,7 @@ final class SettingsPage {
 	}
 
 	public function render(): void {
-		if ( ! current_user_can( 'manage_options' ) ) {
+		if ( ! current_user_can( self::capability() ) ) {
 			return;
 		}
 		echo '<div class="wrap"><h1>' . esc_html__( 'SSI Login', 'bloclabs-ssi-login' ) . '</h1>';
