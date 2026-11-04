@@ -158,15 +158,21 @@ export function evaluateSession(session: Record<string, unknown>, query: QueryDe
   if (!isRecord(presented)) {
     return { kind: 'inconsistent', reason: 'successful session without presented_credentials' };
   }
+  // The configuration guarantees that the wallet presents one credential (parseQuery
+  // refuses anything else), so if the verifier still reports several there is no
+  // single holder key to derive the subject from: never attested, logged as an error.
   let credentialQuery: DcqlCredentialQuery | undefined;
   let credential: Record<string, unknown> | undefined;
   for (const candidate of query.dcql_query.credentials) {
     const list = presented[candidate.id];
-    if (Array.isArray(list) && list.length > 0 && isRecord(list[0])) {
-      credentialQuery = candidate;
-      credential = list[0];
-      break;
+    if (!Array.isArray(list) || list.length === 0 || !isRecord(list[0])) {
+      continue;
     }
+    if (credentialQuery !== undefined || list.length > 1) {
+      return { kind: 'inconsistent', reason: 'several credentials presented, the subject is derived from exactly one' };
+    }
+    credentialQuery = candidate;
+    credential = list[0];
   }
   if (!credentialQuery || !credential) {
     return { kind: 'inconsistent', reason: 'no presented credential matches a configured credential query' };

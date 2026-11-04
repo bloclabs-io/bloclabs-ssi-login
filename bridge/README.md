@@ -89,9 +89,12 @@ Environment variables only.
 Each entry of `BRIDGE_QUERIES` is passed to walt.id as the session's `dcql_query` and optional `policies`
 (`vp_policies`, `vc_policies`, `specific_vc_policies`, in walt.id's JSON). The bridge checks at start-up that every
 credential query uses the `dc+sd-jwt` format and keeps cryptographic holder binding, because the subject it reports
-is the bound holder key. Without `policies`, walt.id runs its defaults: KB-JWT signature, nonce, audience and
-`sd_hash` checks on the presentation, and the issuer signature on the credential. Add `allowed-issuer` and
-`credential-status` policies to pin the trusted issuers and check revocation:
+is the bound holder key. It also refuses a query that could make the wallet present more than one credential,
+because the subject and the claims are read from exactly one: list a single credential query, or list several and
+add one required `credential_sets` entry whose options each name one of them (the wallet then presents one of
+those); `multiple: true` is refused. Without `policies`, walt.id runs its defaults: KB-JWT signature, nonce,
+audience and `sd_hash` checks on the presentation, and the issuer signature on the credential. Add
+`allowed-issuer` and `credential-status` policies to pin the trusted issuers and check revocation:
 
 ```json
 {

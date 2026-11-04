@@ -34,6 +34,13 @@ export const SD_JWT_PRESENTATION =
   + '~WyJzYWx0MSIsImdpdmVuX25hbWUiLCJBZGEiXQ~WyJzYWx0MiIsImVtYWlsIiwiYWRhQGV4YW1wbGUuY29tIl0'
   + '~eyJhbGciOiJFUzI1NiIsInR5cCI6ImtiK2p3dCJ9.eyJub25jZSI6InZlcmlmaWVyLW5vbmNlIn0.a2Itc2lnbmF0dXJl';
 
+/**
+ * sha256 of the RFC 8785 canonical JSON of {login: [SD_JWT_PRESENTATION]}, computed outside
+ * the bridge. It pins the presentation_hash definition of docs/BRIDGE-API.md: a change in how
+ * the vp_token is read or serialised fails a test instead of silently changing the hashes on chain.
+ */
+export const PRESENTATION_HASH_VECTOR = '59469797ce54d2b524ec659e4ad6ca0c759687de5b92a4c863fc15084aa8a15a';
+
 export const QUERIES = {
   default: {
     dcql_query: {

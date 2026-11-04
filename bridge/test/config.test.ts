@@ -48,4 +48,33 @@ describe('configuration', () => {
     assert.throws(() => withQueries({ 'bad name': QUERIES.default }), /query name "bad name"/);
     assert.throws(() => withQueries({ default: { ...QUERIES.default, policies: 'signature' } }), /policies must be an object/);
   });
+
+  it('refuses to start with a query that could present several credentials', () => {
+    const sdJwt = (id: string): Record<string, unknown> => ({ id, format: 'dc+sd-jwt', meta: { vct_values: [`https://issuer.example.com/credentials/${id}`] } });
+    const withQuery = (dcql_query: Record<string, unknown>) => loadConfig(baseEnv({ BRIDGE_QUERIES: JSON.stringify({ default: { dcql_query } }) }));
+    const refused = (dcql_query: Record<string, unknown>, message: RegExp) =>
+      assert.throws(() => withQuery(dcql_query), (error: unknown) => error instanceof ConfigError && message.test(error.message), `expected ${message} for ${JSON.stringify(dcql_query)}`);
+
+    // Without credential_sets every credential query is presented (OpenID4VP 1.0 §6.4).
+    refused({ credentials: [sdJwt('a'), sdJwt('b')] }, /asks the wallet for 2 credentials \(a, b\); the bridge derives the subject from exactly one/);
+    // A credential query may not return several credentials either.
+    refused({ credentials: [{ ...sdJwt('a'), multiple: true }] }, /multiple cannot be true/);
+    // credential_sets must pick exactly one credential.
+    refused({ credentials: [sdJwt('a'), sdJwt('b')], credential_sets: {} }, /credential_sets must be an array of exactly one credential set/);
+    refused({ credentials: [sdJwt('a'), sdJwt('b')], credential_sets: [] }, /credential_sets must be an array of exactly one credential set/);
+    refused({ credentials: [sdJwt('a'), sdJwt('b')], credential_sets: [{ options: [['a']] }, { options: [['b']] }] }, /exactly one credential set/);
+    refused({ credentials: [sdJwt('a'), sdJwt('b')], credential_sets: [{}] }, /non-empty "options" array/);
+    refused({ credentials: [sdJwt('a'), sdJwt('b')], credential_sets: [{ options: [] }] }, /non-empty "options" array/);
+    refused({ credentials: [sdJwt('a'), sdJwt('b')], credential_sets: [{ options: [['a', 'b']] }] }, /every option must name exactly one credential query id \(one of a, b\)/);
+    refused({ credentials: [sdJwt('a'), sdJwt('b')], credential_sets: [{ options: [['a'], ['c']] }] }, /every option must name exactly one credential query id/);
+    refused({ credentials: [sdJwt('a'), sdJwt('b')], credential_sets: [{ options: [['a'], 'b'] }] }, /every option must name exactly one credential query id/);
+    refused({ credentials: [sdJwt('a'), sdJwt('b')], credential_sets: [{ options: [['a'], ['b']], required: false }] }, /required cannot be false/);
+    refused({ credentials: [sdJwt('a'), sdJwt('b'), sdJwt('c')], credential_sets: [{ options: [['a'], ['b']] }] }, /credential query c is not an option of credential_sets\[0\]/);
+
+    // Accepted: one credential query, or one required set whose options each name one of them.
+    assert.deepEqual(Object.keys(withQuery({ credentials: [sdJwt('a')] }).queries), ['default']);
+    const oneOf = { credentials: [sdJwt('a'), sdJwt('b')], credential_sets: [{ options: [['a'], ['b']], required: true, purpose: 'either card' }] };
+    assert.deepEqual(withQuery(oneOf).queries['default']?.dcql_query, oneOf, 'the query is passed to the verifier verbatim');
+    assert.equal(withQuery({ credentials: [sdJwt('a')], credential_sets: [{ options: [['a']] }] }).queries['default']?.dcql_query.credentials.length, 1);
+  });
 });

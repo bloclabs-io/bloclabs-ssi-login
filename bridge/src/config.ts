@@ -133,7 +133,8 @@ function httpUrl(value: string, name: string): string {
 /**
  * Parses BRIDGE_QUERIES: a JSON object of named queries. The bridge derives the
  * subject from the holder key the presentation is bound to, so every credential
- * query must keep cryptographic holder binding, and 0.2 understands SD-JWT VC only.
+ * query must keep cryptographic holder binding, 0.2 understands SD-JWT VC only,
+ * and a query must make the wallet present exactly one credential.
  */
 export function parseQueries(json: string): Record<string, QueryDefinition> {
   let parsed: unknown;
@@ -185,6 +186,9 @@ function parseQuery(name: string, definition: unknown): QueryDefinition {
     if (credential['require_cryptographic_holder_binding'] === false) {
       throw new ConfigError(`${where}.${id}: require_cryptographic_holder_binding cannot be false, the subject is the bound holder key`);
     }
+    if (credential['multiple'] === true) {
+      throw new ConfigError(`${where}.${id}: multiple cannot be true, the subject is derived from exactly one presented credential`);
+    }
     const claims = credential['claims'];
     if (claims !== undefined) {
       if (!Array.isArray(claims) || claims.length === 0) {
@@ -198,6 +202,7 @@ function parseQuery(name: string, definition: unknown): QueryDefinition {
       }
     }
   }
+  requireOneCredential(where, [...seen], dcql['credential_sets']);
   const policies = definition['policies'];
   if (policies !== undefined && !isRecord(policies)) {
     throw new ConfigError(`${where}.policies must be an object when set`);
@@ -207,6 +212,49 @@ function parseQuery(name: string, definition: unknown): QueryDefinition {
     query.policies = policies;
   }
   return query;
+}
+
+/**
+ * The bridge derives the login subject and claims from one presented credential
+ * (evaluateSession), so a query must make the wallet present exactly one. Under
+ * OpenID4VP 1.0 §6.4 every credential query is presented unless `credential_sets`
+ * says otherwise, so either the query lists a single credential query, or it has
+ * one required credential set whose every option names a single credential query
+ * (the wallet then presents one of them). Anything else is refused at start-up
+ * rather than silently resolved to the first credential presented.
+ */
+function requireOneCredential(where: string, ids: string[], credentialSets: unknown): void {
+  const dcql = `${where}.dcql_query`;
+  if (credentialSets === undefined) {
+    if (ids.length !== 1) {
+      throw new ConfigError(
+        `${dcql} asks the wallet for ${ids.length} credentials (${ids.join(', ')}); the bridge derives the subject from exactly one, so list one credential query, or add one credential_sets entry whose options each name one of them`,
+      );
+    }
+    return;
+  }
+  if (!Array.isArray(credentialSets) || credentialSets.length !== 1) {
+    throw new ConfigError(`${dcql}.credential_sets must be an array of exactly one credential set: every required set adds a presented credential, and the bridge derives the subject from exactly one`);
+  }
+  const set = credentialSets[0];
+  if (!isRecord(set) || !Array.isArray(set['options']) || set['options'].length === 0) {
+    throw new ConfigError(`${dcql}.credential_sets[0] must have a non-empty "options" array`);
+  }
+  if (set['required'] === false) {
+    throw new ConfigError(`${dcql}.credential_sets[0]: required cannot be false, the wallet must present exactly one credential`);
+  }
+  const referenced = new Set<string>();
+  for (const option of set['options'] as unknown[]) {
+    const id = Array.isArray(option) && option.length === 1 ? option[0] : undefined;
+    if (typeof id !== 'string' || !ids.includes(id)) {
+      throw new ConfigError(`${dcql}.credential_sets[0]: every option must name exactly one credential query id (one of ${ids.join(', ')}), so that one credential is presented`);
+    }
+    referenced.add(id);
+  }
+  const unreferenced = ids.filter((id) => !referenced.has(id));
+  if (unreferenced.length > 0) {
+    throw new ConfigError(`${dcql}: credential query ${unreferenced.join(', ')} is not an option of credential_sets[0], so the wallet would never be asked for it`);
+  }
 }
 
 export function isRecord(value: unknown): value is Record<string, unknown> {

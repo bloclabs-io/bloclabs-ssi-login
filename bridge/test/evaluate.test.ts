@@ -3,7 +3,7 @@ import { describe, it } from 'node:test';
 
 import { presentationHash } from '../src/crypto.js';
 import { buildSessionSetup, evaluateSession, holderSubjectId, projectClaimPath, selectClaims } from '../src/verifier.js';
-import { credentialData, failedSession, HOLDER_JWK, QUERIES, SD_JWT_PRESENTATION, successfulSession } from './helpers.js';
+import { credentialData, failedSession, HOLDER_JWK, PRESENTATION_HASH_VECTOR, QUERIES, SD_JWT_PRESENTATION, successfulSession } from './helpers.js';
 
 const query = QUERIES.default;
 
@@ -118,6 +118,7 @@ describe('session evaluation', () => {
     assert.equal(evaluation.issuer, 'did:web:issuer.example.com');
     assert.deepEqual(evaluation.claims, { given_name: 'Ada', email: 'ada@example.com', address: { locality: 'London' } });
     assert.equal(evaluation.presentationHash, presentationHash({ login: [SD_JWT_PRESENTATION] }));
+    assert.equal(evaluation.presentationHash, PRESENTATION_HASH_VECTOR, 'the hash of the vp_token as walt.id reports it is pinned');
   });
 
   it('reads a rejection, with the presentation hash when a presentation was received', () => {
@@ -149,6 +150,37 @@ describe('session evaluation', () => {
     inconsistent(successfulSession('x', { credentialData: credentialData({ cnf: { x5t: 'abc' } }) }), /cnf/);
     inconsistent(successfulSession('x', { credential: { type: 'vc-w3c', format: 'jwt_vc_json', credentialData: credentialData() } }), /not an SD-JWT VC/);
     inconsistent(successfulSession('x', { vpToken: { login: [1 as unknown as string] } }), /presented_raw_data/);
+  });
+
+  it('never derives a subject from several presented credentials', () => {
+    // The configuration refuses a query that could present several credentials (config.test.ts);
+    // if the verifier nonetheless reports several, there is no single holder key to trust.
+    const presentedCredential = (session: Record<string, unknown>, id: string): Record<string, unknown> =>
+      ((session['presented_credentials'] as Record<string, unknown[]>)[id]![0]) as Record<string, unknown>;
+    const twoForOneQuery = successfulSession('x');
+    const credential = presentedCredential(twoForOneQuery, 'login');
+    (twoForOneQuery['presented_credentials'] as Record<string, unknown>)['login'] = [credential, credential];
+    const evaluation = evaluateSession(twoForOneQuery, query);
+    assert.equal(evaluation.kind, 'inconsistent');
+    assert.match((evaluation as { reason: string }).reason, /several credentials/);
+
+    const oneOf = {
+      dcql_query: {
+        credentials: [
+          { id: 'employee', format: 'dc+sd-jwt', meta: { vct_values: ['https://issuer.example.com/credentials/employee'] } },
+          { id: 'login', format: 'dc+sd-jwt', meta: { vct_values: [QUERIES.default.dcql_query.credentials[0]!.meta.vct_values[0]!] } },
+        ],
+        credential_sets: [{ options: [['employee'], ['login']] }],
+      },
+    };
+    const oneOfSession = successfulSession('x', { queryId: 'login', vpToken: { employee: [SD_JWT_PRESENTATION], login: [SD_JWT_PRESENTATION] } });
+    (oneOfSession['presented_credentials'] as Record<string, unknown>)['employee'] = [presentedCredential(oneOfSession, 'login')];
+    const both = evaluateSession(oneOfSession, oneOf);
+    assert.equal(both.kind, 'inconsistent');
+    assert.match((both as { reason: string }).reason, /several credentials/);
+
+    const onlyLogin = successfulSession('x');
+    assert.equal(evaluateSession(onlyLogin, oneOf).kind, 'verified', 'one presented credential of a one-of query is a subject');
   });
 
   it('falls back to iss when the credential carries no issuer field', () => {
