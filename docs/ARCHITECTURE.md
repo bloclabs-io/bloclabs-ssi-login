@@ -117,7 +117,7 @@ See [SECURITY-MODEL.md](SECURITY-MODEL.md) for threats and mitigations.
 |---|---|---|
 | `bloclabs_ssi_verifier_client` | filter | Replace the bridge client with another `VerifierClient` |
 | `bloclabs_ssi_event_decoder` | filter | Decode a different contract event or layout |
-| `bloclabs_ssi_resolve_user` | filter | Last word on which user a subject becomes |
+| `bloclabs_ssi_resolve_user` | filter | Last word on which user a subject becomes; an account provisioned for a login it refuses or redirects is removed again |
 | `bloclabs_ssi_provision_user_data` | filter | Shape (or refuse) accounts created for new subjects |
 | `bloclabs_ssi_allow_login` | filter | Veto a login after the credential checked out; anything but `true` refuses |
 | `bloclabs_ssi_wallet_url_schemes` | filter | Allowed wallet URL schemes (default `openid4vp`, `https`) |

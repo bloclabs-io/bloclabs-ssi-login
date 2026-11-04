@@ -27,6 +27,8 @@ final class VerifierFake implements VerifierClient {
 
 	public ?string $subject_id = null;
 
+	public ?string $issuer = null;
+
 	public ?string $presentation_hash = null;
 
 	public int $creates = 0;
@@ -43,6 +45,7 @@ final class VerifierFake implements VerifierClient {
 		$this->create_error      = null;
 		$this->result_error      = null;
 		$this->subject_id        = null;
+		$this->issuer            = null;
 		$this->presentation_hash = null;
 		$this->creates           = 0;
 		$this->fetches           = 0;
@@ -75,7 +78,7 @@ final class VerifierFake implements VerifierClient {
 
 		return new PresentationResult(
 			$this->subject_id ?? (string) $fixture['subject'],
-			'did:web:issuer.example',
+			$this->issuer ?? 'did:web:issuer.example',
 			strtolower( (string) ( $this->presentation_hash ?? $fixture['presentation_hash'] ) ),
 			array( 'name' => 'Ada' )
 		);

@@ -19,11 +19,17 @@ declare(strict_types=1);
 namespace BlocLabs\SsiLogin\Identity;
 
 use BlocLabs\SsiLogin\Config\Settings;
+use BlocLabs\SsiLogin\Login\LoginFinalizer;
 use BlocLabs\SsiLogin\Verifier\PresentationResult;
 
 final class UserResolver {
 
-	/** @var array<int, string> Users this request created, with their subject hash. */
+	/**
+	 * Users this request provisioned, by id: true when it created the account,
+	 * false when it adopted a network account that no site held (see provision()).
+	 *
+	 * @var array<int, bool>
+	 */
 	private array $provisioned = array();
 
 	public function __construct(
@@ -35,7 +41,13 @@ final class UserResolver {
 		return hash_hmac( 'sha256', $subject_id, $this->settings->subject_key() );
 	}
 
-	public function resolve( PresentationResult $result ): ?\WP_User {
+	/**
+	 * @return \WP_User|\WP_Error|null The user to log in; a WP_Error the browser retries
+	 *                                 when the answer is not known yet (another request is
+	 *                                 still creating this subject's account, or the link could
+	 *                                 not be stored); null when the subject has no account here.
+	 */
+	public function resolve( PresentationResult $result ) {
 		$hash    = $this->subject_hash( $result->subject_id );
 		$user_id = $this->identities->user_id_for( $hash );
 
@@ -47,6 +59,9 @@ final class UserResolver {
 
 		if ( null === $user_id && Settings::AUTO_PROVISION === $this->settings->string( 'linking_policy' ) ) {
 			$user_id = $this->provision( $result, $hash );
+			if ( is_wp_error( $user_id ) ) {
+				return $user_id;
+			}
 		}
 
 		/**
@@ -55,9 +70,14 @@ final class UserResolver {
 		 * @param int|null           $user_id
 		 * @param PresentationResult $result
 		 */
-		$user_id = apply_filters( 'bloclabs_ssi_resolve_user', $user_id, $result );
+		$chosen = apply_filters( 'bloclabs_ssi_resolve_user', $user_id, $result );
 
-		$user = is_int( $user_id ) ? get_userdata( $user_id ) : false;
+		$user = is_int( $chosen ) ? get_userdata( $chosen ) : false;
+
+		// An account this request made for a login the filter then refused, or sent elsewhere, must not stay behind.
+		if ( is_int( $user_id ) && ( ! $user instanceof \WP_User || $user->ID !== $user_id ) ) {
+			$this->undo_provision( $user_id );
+		}
 		if ( ! $user instanceof \WP_User ) {
 			return null;
 		}
@@ -79,9 +99,23 @@ final class UserResolver {
 		return $role->name;
 	}
 
-	private function provision( PresentationResult $result, string $hash ): ?int {
-		$data = array(
-			'user_login'   => 'ssi-' . substr( $hash, 0, 12 ),
+	/**
+	 * Creates and links an account for a new subject.
+	 *
+	 * The login is deterministic (`ssi-` and the start of the subject hash), so
+	 * a login that already exists is this subject's own account in one of three
+	 * states: linked by a concurrent request that got there first (use it); not
+	 * linked yet by that request (retry, never "not linked"); or, on multisite,
+	 * stranded without a site, because wp_delete_user() only removes a network
+	 * user from the current site, or because the subject already has an account
+	 * on another site of the network under a shared subject key (adopt it).
+	 *
+	 * @return int|\WP_Error|null The user id; a WP_Error to retry; null to refuse.
+	 */
+	private function provision( PresentationResult $result, string $hash ) {
+		$login = 'ssi-' . substr( $hash, 0, 12 );
+		$data  = array(
+			'user_login'   => $login,
 			'user_pass'    => wp_generate_password( 64, true, true ),
 			'display_name' => isset( $result->claims['name'] ) && is_string( $result->claims['name'] ) ? sanitize_text_field( $result->claims['name'] ) : '',
 			'role'         => $this->safe_role(),
@@ -102,33 +136,89 @@ final class UserResolver {
 		unset( $data['ID'], $data['user_level'] );
 		$data['role'] = $this->safe_role( isset( $data['role'] ) ? (string) $data['role'] : '' );
 
+		$created = true;
 		$user_id = wp_insert_user( wp_slash( $data ) );
 		if ( is_wp_error( $user_id ) ) {
-			return null;
+			if ( 'existing_user_login' !== $user_id->get_error_code() ) {
+				return null;
+			}
+			$linked = $this->identities->user_id_for( $hash );
+			if ( null !== $linked ) {
+				return $linked;
+			}
+			$user_id = $this->stranded( $login, (string) ( $data['user_login'] ?? '' ) );
+			if ( null === $user_id ) {
+				return self::retry();
+			}
+			$created = false;
+			add_user_to_blog( get_current_blog_id(), $user_id, $data['role'] );
 		}
 
 		if ( ! $this->identities->link( $hash, $user_id, IdentityRepository::label( $result->subject_id, $this->settings->subject_key() ), $result->issuer ) ) {
-			// Lost a race with a concurrent provision of the same subject: use the winner.
-			require_once ABSPATH . 'wp-admin/includes/user.php';
-			wp_delete_user( $user_id );
-			return $this->identities->user_id_for( $hash );
+			$winner = $this->identities->user_id_for( $hash );
+			if ( $winner === $user_id ) {
+				return $user_id;
+			}
+			// Lost a race with a concurrent provision of the same subject (use the winner), or the
+			// link could not be stored at all (retry): either way this account is of no use.
+			$this->discard( $user_id, $created );
+			return $winner ?? self::retry();
 		}
 
-		$this->provisioned[ $user_id ] = $hash;
+		$this->provisioned[ $user_id ] = $created;
 		return $user_id;
+	}
+
+	/**
+	 * On multisite: the network user holding this subject's deterministic login
+	 * that no site holds. Only the generated login counts; one the provisioning
+	 * filter chose may belong to someone else.
+	 */
+	private function stranded( string $generated, string $login ): ?int {
+		if ( ! is_multisite() || $login !== $generated ) {
+			return null;
+		}
+		$user = get_user_by( 'login', $login );
+		if ( ! $user instanceof \WP_User || is_user_member_of_blog( $user->ID ) ) {
+			return null;
+		}
+		return $user->ID;
 	}
 
 	/**
 	 * Removes an account this request provisioned, when the login it was made for
 	 * is then refused: otherwise every later attempt would find it and fail again.
 	 */
-	public function undo_provision( \WP_User $user ): void {
-		if ( ! isset( $this->provisioned[ $user->ID ] ) ) {
+	public function undo_provision( int $user_id ): void {
+		if ( ! isset( $this->provisioned[ $user_id ] ) ) {
 			return;
 		}
-		unset( $this->provisioned[ $user->ID ] );
-		$this->identities->unlink_user( $user->ID );
+		$created = $this->provisioned[ $user_id ];
+		unset( $this->provisioned[ $user_id ] );
+		$this->identities->unlink_user( $user_id );
+		$this->discard( $user_id, $created );
+	}
+
+	/**
+	 * An account this request created goes away everywhere: on multisite
+	 * wp_delete_user() would only remove it from this site and leave its login
+	 * taken. An adopted account goes back to the network, which may still use it.
+	 */
+	private function discard( int $user_id, bool $created ): void {
+		if ( ! $created ) {
+			remove_user_from_blog( $user_id, get_current_blog_id() );
+			return;
+		}
 		require_once ABSPATH . 'wp-admin/includes/user.php';
-		wp_delete_user( $user->ID );
+		if ( is_multisite() ) {
+			require_once ABSPATH . 'wp-admin/includes/ms.php';
+			wpmu_delete_user( $user_id );
+			return;
+		}
+		wp_delete_user( $user_id );
+	}
+
+	private static function retry(): \WP_Error {
+		return new \WP_Error( LoginFinalizer::RETRY, __( 'Still setting up your account…', 'bloclabs-ssi-login' ), array( 'status' => 503 ) );
 	}
 }
