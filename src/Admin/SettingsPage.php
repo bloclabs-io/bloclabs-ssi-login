@@ -137,7 +137,8 @@ final class SettingsPage {
 	 * @return array<string, mixed>
 	 */
 	public function sanitize( $input ): array {
-		$input  = is_array( $input ) ? wp_unslash( $input ) : array();
+		// options.php has unslashed the posted values already; unslashing again would eat typed backslashes.
+		$input  = is_array( $input ) ? $input : array();
 		$stored = (array) get_option( Settings::OPTION, array() );
 		// Start from what is stored (known keys only), so settings this form does not show survive a save.
 		$out = array_intersect_key( $stored, Settings::defaults() );

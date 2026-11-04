@@ -45,8 +45,16 @@ jobs:
       - run: docker run --rm -v "$PWD/contracts:/src:ro" ethereum/solc:0.8.28 --optimize --evm-version paris --abi --bin /src/SsiLoginAttestor.sol > /dev/null
 
   integration:
-    name: Integration (WordPress)
+    name: ${{ matrix.name }}
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: Integration (WordPress)
+            multisite: "0"
+          - name: Integration (WordPress, multisite)
+            multisite: "1"
     services:
       mysql:
         image: mysql:8.0
@@ -66,6 +74,7 @@ jobs:
       WP_TESTS_DB_PASSWORD: root
       WP_TESTS_DB_HOST: 127.0.0.1
       WP_VERSION: "6.6.10"
+      WP_MULTISITE: ${{ matrix.multisite }}
     steps:
       - uses: actions/checkout@v4
       - uses: shivammathur/setup-php@v2
