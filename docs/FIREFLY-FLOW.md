@@ -18,7 +18,7 @@ sequenceDiagram
 
     B->>WP: POST /initiate (nonce header)
     WP->>WP: open attempt, set binding cookie
-    WP->>BR: POST /v1/presentation-requests {correlation_id, nonce, query, expires_at}
+    WP->>BR: POST /v1/presentation-requests {correlation_id, nonce, blinding_secret, query, expires_at}
     BR-->>WP: {id, wallet_url}
     WP-->>B: {attempt, wallet_url}
     B->>B: show QR / same-device link
@@ -76,15 +76,26 @@ Done once per environment by an operator (FireFly's own tooling, or `firefly-mcp
 
 ## Runtime calls
 
-**Bridge → FireFly: attest.** `POST /apis/ssi-login-attestor/invoke/attest`
+**Bridge → FireFly: attest.** `POST /apis/ssi-login-attestor/invoke/attest?confirm=true`
 ```json
 {"key": "<verifier address>", "input": {
   "correlationId": "0x<64 hex>", "result": 1,
-  "subjectCommitment": "0x<sha256(correlation_id ':' subject_id)>",
-  "presentationHash": "0x<sha256(presentation)>"}}
+  "subjectCommitment": "0x<sha256(correlation_id ':' blinding_secret ':' subject_id)>",
+  "presentationHash": "0x<sha256(canonical JSON of the parsed vp_token)>"},
+ "idempotencyKey": "bloclabs-ssi-login:<correlation_id>"}
 ```
 `result` is `1` (verified) or `2` (rejected). With `?confirm=true` the call returned in **2.9 s**, and the event was
-already readable at that point.
+already readable at that point. The `idempotencyKey` makes a retry safe: FireFly answers a repeated key with
+`409` and `FF10431: Idempotency key '…' already used for transaction '<id>'`, and the bridge then reads
+`GET /transactions/{id}/status` (`Succeeded`, `Pending` or `Failed`) instead of attesting again.
+
+**Why every rejection is attested, including a wallet's decline.** A presentation that fails validation and a
+wallet's OpenID4VP error response (the holder declined, `access_denied`) both become `result = 2`, the decline with
+a zero presentation hash. blocLabs records refusals instead of letting them vanish: an attempt that merely expires
+in WordPress is indistinguishable from a lost callback or a verifier that was down, while an attested rejection
+says that the holder, or their credential, was the reason. It adds no chain-write surface: an attempt is opened
+only through `/initiate`, which `InitiateController` rate-limits per IP, and a bad presentation is attested the
+same way, so a holder who declines can write no more to the chain than one who presents something invalid.
 
 **FireFly → WordPress: delivery.** An enriched event. WordPress uses only its `id`, then re-reads the event (below). With `withData` off and no batching, the body is the event
 itself (with `batch: true`, an array of them):

@@ -8,9 +8,9 @@ A verifier checks it and records its decision on a blockchain through
 [Hyperledger FireFly](https://hyperledger-firefly.github.io/firefly/latest/). FireFly streams that record to
 WordPress, which logs the visitor in. The chain holds commitments only, never claims or identifiers.
 
-> **Status: pre-alpha (0.1.0-dev).** The plugin framework, the attestor contract and the FireFly event path are
-> built and tested. The verifier bridge (the OpenID4VP side) is specified but not yet implemented, so the plugin
-> cannot log anyone in on its own yet. See [Roadmap](#roadmap).
+> **Status: pre-alpha (0.1.0-dev).** The plugin framework, the attestor contract, the FireFly event path and the
+> reference verifier bridge ([`bridge/`](bridge/), on walt.id verifier-api2) are built and unit-tested. A login has
+> not been exercised end to end with a real wallet yet, so treat the whole as unreleased. See [Roadmap](#roadmap).
 
 ```mermaid
 flowchart LR
@@ -28,7 +28,7 @@ flowchart LR
 - **No passwords to steal.** The wallet proves possession of a credential bound to a key on the user's device.
 - **Selective disclosure.** The site asks for what it needs (a DCQL query) and nothing more.
 - **Provable logins.** Each decision is an on-chain event signed by an authorised verifier, so it can be audited
-  later without trusting the web server's logs. Per-attempt salted commitments keep one person's logins unlinkable
+  later without trusting the web server's logs. Per-attempt blinded commitments keep one person's logins unlinkable
   on the chain.
 - **Verifiable agents.** Software agents can hold credentials too. The same flow lets an AI agent prove who it is
   and who it acts for, and leaves an attested trail of what it logged into.
@@ -55,14 +55,17 @@ The full flow, with every FireFly call, is in [docs/FIREFLY-FLOW.md](docs/FIREFL
 | [Architecture](docs/ARCHITECTURE.md) | Components, trust boundaries, data model, extension points, deployment topologies |
 | [FireFly flow](docs/FIREFLY-FLOW.md) | Setup and runtime API calls, payloads, timings measured on a real node |
 | [Bridge API](docs/BRIDGE-API.md) | The contract between the plugin and any OpenID4VP verifier |
+| [Bridge](bridge/README.md) | The reference bridge on walt.id verifier-api2: setup, configuration, limitations |
 | [Security model](docs/SECURITY-MODEL.md) | Threats and mitigations, including the cross-device QR relay attack |
-| [Decisions](docs/adr/) | Why OpenID4VP at the edge, a custom table, webhooks with a pull fallback, on-chain attestation |
+| [Decisions](docs/adr/) | Why OpenID4VP at the edge, a custom table, webhooks with a pull fallback, on-chain attestation, a dependency-free bridge |
 
 ## Requirements
 
 - WordPress 6.6+, PHP 8.1+
 - Hyperledger FireFly 1.3+ (tested on 1.5.0) with an EVM chain (tested on Besu QBFT)
-- An OpenID4VP verifier behind the [bridge API](docs/BRIDGE-API.md)
+- An OpenID4VP verifier behind the [bridge API](docs/BRIDGE-API.md): the reference bridge in [`bridge/`](bridge/)
+  with [walt.id verifier-api2](https://github.com/walt-id/waltid-identity) 1.2.0 (Node 22 for the bridge, a JVM
+  container for the verifier)
 
 ## Development
 
@@ -71,6 +74,7 @@ composer install
 composer test    # PHPUnit
 composer phpcs   # WordPress coding standards
 npm install && npm run vendor   # optional: copies the QR encoder into assets/vendor/
+cd bridge && npm ci && npm test  # the verifier bridge (Node 22): build and tests
 ```
 
 Without PHP locally: `docker run --rm -v "$PWD:/app" -w /app composer:2 sh -c "composer install && composer test"`.
@@ -78,8 +82,8 @@ Without PHP locally: `docker run --rm -v "$PWD:/app" -w /app composer:2 sh -c "c
 ## Roadmap
 
 - **0.1** Plugin framework, attestor contract, FireFly event path, unit tests (this release).
-- **0.2** Reference verifier bridge on [walt.id verifier-api2](https://github.com/walt-id/waltid-identity), and a
-  one-command Docker demo (WordPress, FireFly, Besu, verifier).
+- **0.2** Reference verifier bridge on [walt.id verifier-api2](https://github.com/walt-id/waltid-identity)
+  (built: [`bridge/`](bridge/)), and a one-command Docker demo (WordPress, FireFly, Besu, verifier) (open).
 - **0.3** "Link a credential" on the profile screen; same-device login through the browser's
   [Digital Credentials API](https://www.w3.org/TR/digital-credentials/); integration tests on `wp-env`.
 - **0.4** On-chain trusted-issuer registry; agent login that issues an application token instead of a cookie.

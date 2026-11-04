@@ -7,7 +7,8 @@ pragma solidity ^0.8.24;
 ///      LoginAttested and streams it to WordPress. Only commitments go on chain,
 ///      never claims, DIDs or anything personal:
 ///        correlationId     random per attempt, known to WordPress and the verifier
-///        subjectCommitment sha256(hex(correlationId) ":" subjectId), unlinkable across logins
+///        subjectCommitment sha256(hex(correlationId) ":" blindingSecret ":" subjectId); the per-attempt
+///                          blinding secret stays with WordPress and the verifier, so logins are unlinkable
 ///        presentationHash  sha256 of the presentation as the verifier received it
 contract SsiLoginAttestor {
     uint8 public constant RESULT_VERIFIED = 1;

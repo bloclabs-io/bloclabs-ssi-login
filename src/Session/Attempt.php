@@ -7,6 +7,10 @@
  * - correlation_id travels to the verifier and onto the chain, and never reaches the browser.
  * Nobody who watches the chain can tie an attestation to a browser session.
  *
+ * blinding_secret travels to the verifier only. It blinds the subject
+ * commitment, so nobody who watches the chain can test a guessed subject id
+ * against an attestation either (#25).
+ *
  * @package BlocLabs\SsiLogin
  */
 
@@ -22,6 +26,7 @@ final class Attempt {
 		public readonly string $correlation_id,
 		public readonly string $binding_hash,
 		public readonly string $nonce,
+		public readonly string $blinding_secret,
 		public readonly AttemptStatus $status,
 		public readonly ?string $verifier_ref,
 		public readonly ?string $redirect_to,
@@ -44,6 +49,7 @@ final class Attempt {
 			(string) $row['correlation_id'],
 			(string) $row['binding_hash'],
 			(string) $row['nonce'],
+			(string) ( $row['blinding_secret'] ?? '' ),
 			AttemptStatus::from( (string) $row['status'] ),
 			$row['verifier_ref'] ?? null,
 			$row['redirect_to'] ?? null,

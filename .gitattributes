@@ -3,6 +3,7 @@
 
 # Left out of `git archive` (the plugin ZIP): development files only.
 /.github            export-ignore
+/bridge             export-ignore
 /contracts          export-ignore
 /docs               export-ignore
 /tests              export-ignore

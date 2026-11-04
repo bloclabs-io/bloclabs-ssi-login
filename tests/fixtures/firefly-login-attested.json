@@ -4,7 +4,8 @@
   "address": "0x756ebfeafeb6c28ebd7cfee3f2e79ac1d16b8ee3",
   "correlation": "3575e334c14dcc31670ded8ad7c600007ccd69a694c8251151b51c8780b97fea",
   "subject": "did:key:z6MkhaXgBZDvotDkL5257faiztiGiC2QtKLGpbnnEGta2doK",
-  "commitment": "0b0a5c9cc57cdd4951ed9a01636dbe449ff53c6b2064891ba1568bb5b83189c4",
+  "blinding_secret": "910eee70e9fcf789d255e543fbfc583ec20bef8586d49c63ce61135e7d625dd4",
+  "commitment": "ff431823f5daf0d2c7cff7acbfe6fede4a93020e569dbc1d1fab8c0b2c213a9a",
   "presentation_hash": "ced03b89f43cf1f5acb79d216f7477415a7e798a7434feb513102f1eda2069f5",
   "delivery": {
     "id": "0bf6109f-44f9-4094-9694-1df229e2c085",
@@ -25,7 +26,7 @@
         "correlationId": "0x3575e334c14dcc31670ded8ad7c600007ccd69a694c8251151b51c8780b97fea",
         "presentationHash": "0xced03b89f43cf1f5acb79d216f7477415a7e798a7434feb513102f1eda2069f5",
         "result": "1",
-        "subjectCommitment": "0x0b0a5c9cc57cdd4951ed9a01636dbe449ff53c6b2064891ba1568bb5b83189c4",
+        "subjectCommitment": "0xff431823f5daf0d2c7cff7acbfe6fede4a93020e569dbc1d1fab8c0b2c213a9a",
         "verifier": "0xbf33f2531f9326b66a43e2cb247d59265fc93abe"
       },
       "info": {
@@ -56,5 +57,5 @@
       }
     }
   },
-  "_note": "Captured from a local FireFly v1.5.0 + Besu QBFT node: GET /events/{id}?fetchreference=true after one attest() call. Throwaway local chain."
+  "_note": "Captured from a local FireFly v1.5.0 + Besu QBFT node: GET /events/{id}?fetchreference=true after one attest() call. Throwaway local chain. subjectCommitment was recomputed with blinding_secret when the commitment gained the blinding secret (#25); everything else is as captured."
 }

@@ -2,6 +2,16 @@
 
 ## 0.1.0-dev (unreleased)
 
+- Reference verifier bridge in `bridge/` (TypeScript on Node 22, no runtime dependencies, ADR 0005): the two routes
+  of docs/BRIDGE-API.md behind a bearer token; OpenID4VP 1.0 delegated to walt.id verifier-api2 (1.2.0) through its
+  session API and webhooks; subject and presentation commitments; `attest()` through FireFly with an idempotency
+  key; results readable only after the attestation and deleted after the attempt lifetime plus a minute.
+  A query that could present several credentials is refused at start-up, `presentation_hash` is the SHA-256 of
+  the RFC 8785 canonical JSON of the parsed `vp_token` (pinned by test vectors), and a wallet's decline is
+  attested as a rejection. Dockerfile, docker-compose example with placeholders, CI job (#21).
+- The subject commitment is blinded with a per-attempt secret that WordPress generates and shares with the bridge
+  only (`blinding_secret` in the bridge request, schema version 2 adds the column); the correlation id alone is
+  public on chain, so it could not keep logins unlinkable (#25).
 - `AGENTS.md` no longer gives an end date for Grok in Cursor (founder, 2026-11-04). Repository process only, no code change.
 - Plugin framework: login block on `wp-login.php`, REST routes (`initiate`, `status`, `complete`, `firefly/events`),
   cookie-bound attempts in a custom table, user linking and optional provisioning, settings screen, WP-CLI command.

@@ -18,7 +18,7 @@ final class WebhookRouteTest extends IntegrationTestCase {
 
 	public function test_wrong_secret_is_refused(): void {
 		$opened   = $this->open_attempt();
-		$delivery = CapturedLoginEvent::delivery_for( (string) $opened['row']['correlation_id'] );
+		$delivery = CapturedLoginEvent::delivery_for( (string) $opened['row']['correlation_id'], (string) $opened['row']['blinding_secret'] );
 		FireFlyHttpFake::instance()->serve( $delivery );
 
 		$response = $this->dispatch(
@@ -38,7 +38,7 @@ final class WebhookRouteTest extends IntegrationTestCase {
 	public function test_short_secret_is_refused(): void {
 		$this->configure( array( 'webhook_secret' => 'short-secret' ) );
 		$opened   = $this->open_attempt();
-		$delivery = CapturedLoginEvent::delivery_for( (string) $opened['row']['correlation_id'] );
+		$delivery = CapturedLoginEvent::delivery_for( (string) $opened['row']['correlation_id'], (string) $opened['row']['blinding_secret'] );
 		FireFlyHttpFake::instance()->serve( $delivery );
 
 		$response = $this->dispatch(
@@ -57,7 +57,7 @@ final class WebhookRouteTest extends IntegrationTestCase {
 	public function test_body_is_never_trusted(): void {
 		$opened    = $this->open_attempt();
 		$public_id = (string) $opened['data']['attempt'];
-		$real      = CapturedLoginEvent::delivery_for( (string) $opened['row']['correlation_id'] );
+		$real      = CapturedLoginEvent::delivery_for( (string) $opened['row']['correlation_id'], (string) $opened['row']['blinding_secret'] );
 		FireFlyHttpFake::instance()->serve( $real );
 
 		$lie                                        = $real;
@@ -77,7 +77,7 @@ final class WebhookRouteTest extends IntegrationTestCase {
 		$row = $this->attempt_row( $public_id );
 		$this->assertSame( 'verified', $row['status'] );
 		$this->assertSame(
-			Attestation::subject_commitment( (string) $opened['row']['correlation_id'], (string) CapturedLoginEvent::fixture()['subject'] ),
+			Attestation::subject_commitment( (string) $opened['row']['correlation_id'], (string) $opened['row']['blinding_secret'], (string) CapturedLoginEvent::fixture()['subject'] ),
 			$row['subject_commitment']
 		);
 		$this->assertNotSame( str_repeat( '11', 32 ), $row['subject_commitment'] );
@@ -85,7 +85,7 @@ final class WebhookRouteTest extends IntegrationTestCase {
 
 		// A body FireFly cannot confirm does nothing, however complete it looks.
 		$second = $this->open_attempt();
-		$missed = CapturedLoginEvent::delivery_for( (string) $second['row']['correlation_id'] );
+		$missed = CapturedLoginEvent::delivery_for( (string) $second['row']['correlation_id'], (string) $second['row']['blinding_secret'] );
 		FireFlyHttpFake::instance()->serve( $missed );
 		FireFlyHttpFake::instance()->status = 404;
 

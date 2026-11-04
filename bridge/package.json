@@ -1,0 +1,20 @@
+{
+  "name": "bloclabs-ssi-bridge",
+  "version": "0.2.0-dev",
+  "private": true,
+  "description": "Verifier bridge between wallets (via walt.id verifier-api2), WordPress and Hyperledger FireFly for blocLabs SSI Login.",
+  "license": "GPL-2.0-or-later",
+  "type": "module",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "test": "npm run build && node --test \"dist/test/**/*.test.js\"",
+    "start": "node dist/src/main.js"
+  },
+  "devDependencies": {
+    "@types/node": "^22.20.5",
+    "typescript": "~5.9.3"
+  }
+}
