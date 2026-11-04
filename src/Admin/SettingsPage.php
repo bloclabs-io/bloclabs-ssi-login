@@ -22,6 +22,18 @@ final class SettingsPage {
 
 	private const PAGE = 'bloclabs-ssi-login';
 
+	/**
+	 * Bounds for the numeric fields: key => [min, max]. A cap of 0 would turn
+	 * credential login off through a limit, and 0 proxies would index past the
+	 * header, so neither can be saved.
+	 */
+	private const RANGES = array(
+		'attempt_ttl'        => array( 60, 600 ),
+		'max_pending_per_ip' => array( 1, 1000 ),
+		'max_pending_total'  => array( 10, 100000 ),
+		'client_ip_proxies'  => array( 1, 10 ),
+	);
+
 	public function __construct( private readonly Settings $settings ) {}
 
 	public function register(): void {
@@ -65,7 +77,10 @@ final class SettingsPage {
 			'linking_policy'       => array( __( 'Unknown credentials', 'bloclabs-ssi-login' ), 'policy', 'general', __( '"Link only" lets only linked credentials log in. "Create account" registers new users.', 'bloclabs-ssi-login' ) ),
 			'default_role'         => array( __( 'Role for new accounts', 'bloclabs-ssi-login' ), 'text', 'general', __( 'Roles that can manage options or users are never granted; subscriber is used instead.', 'bloclabs-ssi-login' ) ),
 			'attempt_ttl'          => array( __( 'Request lifetime (seconds)', 'bloclabs-ssi-login' ), 'number', 'general' ),
-			'client_ip_header'     => array( __( 'Client IP header', 'bloclabs-ssi-login' ), 'text', 'general', __( 'e.g. HTTP_CF_CONNECTING_IP. Leave empty unless the site is reachable only through that proxy.', 'bloclabs-ssi-login' ) ),
+			'max_pending_per_ip'   => array( __( 'Login requests per client', 'bloclabs-ssi-login' ), 'number', 'general', __( 'Per 10 minutes, counting failed and expired ones. A client is an IPv4 address or an IPv6 /64.', 'bloclabs-ssi-login' ) ),
+			'max_pending_total'    => array( __( 'Login requests site-wide', 'bloclabs-ssi-login' ), 'number', 'general', __( 'Per 10 minutes, all clients together. Keeps a flood from many addresses off the verifier.', 'bloclabs-ssi-login' ) ),
+			'client_ip_header'     => array( __( 'Client IP header', 'bloclabs-ssi-login' ), 'text', 'general', __( 'e.g. HTTP_CF_CONNECTING_IP or HTTP_X_FORWARDED_FOR. Leave empty unless the site is reachable only through that proxy.', 'bloclabs-ssi-login' ) ),
+			'client_ip_proxies'    => array( __( 'Proxies that append to it', 'bloclabs-ssi-login' ), 'number', 'general', __( 'The client is this many entries from the right of a comma-separated header. Ignored without a header.', 'bloclabs-ssi-login' ) ),
 			'verifier_url'         => array( __( 'Verifier bridge URL', 'bloclabs-ssi-login' ), 'url', 'verifier' ),
 			'verifier_auth_header' => array( __( 'Verifier Authorization header', 'bloclabs-ssi-login' ), 'secret', 'verifier', __( 'Required: credential login stays off without it. Prefer BLOCLABS_SSI_VERIFIER_AUTH_HEADER in wp-config.php.', 'bloclabs-ssi-login' ) ),
 			'credential_query'     => array( __( 'Credential query name', 'bloclabs-ssi-login' ), 'text', 'verifier', __( 'A DCQL query defined in the verifier.', 'bloclabs-ssi-login' ) ),
@@ -137,7 +152,8 @@ final class SettingsPage {
 					$out[ $key ] = ! empty( $value );
 					break;
 				case 'number':
-					$out[ $key ] = max( 60, min( 600, absint( $value ) ) );
+					list( $min, $max ) = self::RANGES[ $key ];
+					$out[ $key ]       = max( $min, min( $max, absint( $value ) ) );
 					break;
 				case 'url':
 					$out[ $key ] = esc_url_raw( (string) $value, array( 'http', 'https' ) );

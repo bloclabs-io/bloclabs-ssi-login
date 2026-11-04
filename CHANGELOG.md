@@ -32,3 +32,9 @@
 - Fix from the Fable review (#28): a credential login now runs the `wp_authenticate` action and the
   `wp_authenticate_user` filter before `authenticate`, so lockout, ban and disabled-account plugins refuse it as they
   would a password login.
+- Fix from the Fable review (#26): behind a proxy the rate-limit key is taken `client_ip_proxies` entries from the
+  right of the forwarded-for header, never from the left, where the sender writes; a header that cannot name the
+  client refuses the request. A client is an IPv4 address or an IPv6 /64, a site-wide cap (`max_pending_total`,
+  default 500 per 10 minutes) backs the per-client one, both caps are on the settings page, and they are checked
+  again by the row's rank after the insert, so a parallel burst cannot overshoot. Schema version 3 adds an index
+  on `created_at` for the site-wide count.
