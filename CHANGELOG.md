@@ -2,6 +2,7 @@
 
 ## 0.1.0-dev (unreleased)
 
+- `AGENTS.md` no longer gives an end date for Grok in Cursor (founder, 2026-11-04). Repository process only, no code change.
 - Plugin framework: login block on `wp-login.php`, REST routes (`initiate`, `status`, `complete`, `firefly/events`),
   cookie-bound attempts in a custom table, user linking and optional provisioning, settings screen, WP-CLI command.
 - FireFly integration: webhook doorbell with pull confirmation, polling fallback, `LoginAttested` decoder.
