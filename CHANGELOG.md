@@ -28,3 +28,6 @@
   for roles (Fable writes the code here). Repository process only, no code change.
 - Fix from the Fable review (#27): on multisite, the settings page and its save require `manage_network_options`,
   so a site administrator cannot point the plugin at another bridge or FireFly, or turn on account creation.
+- Fix from the Fable review (#28): a credential login now runs the `wp_authenticate` action and the
+  `wp_authenticate_user` filter before `authenticate`, so lockout, ban and disabled-account plugins refuse it as they
+  would a password login.

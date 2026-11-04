@@ -7,7 +7,8 @@
  *    leaves the attempt `verified`, so the browser can retry;
  * 2. check it against the on-chain commitments FireFly delivered;
  * 3. resolve the user and run the same checks a password login gets
- *    (the `authenticate` filter, then `bloclabs_ssi_allow_login`);
+ *    (the `wp_authenticate` action, the `wp_authenticate_user` and
+ *    `authenticate` filters, then `bloclabs_ssi_allow_login`);
  * 4. consume the attempt (compare-and-set: exactly one request wins);
  * 5. only then set the auth cookie.
  * A definitive refusal (mismatch, unlinked credential, veto) moves the
@@ -108,20 +109,32 @@ final class LoginFinalizer {
 	/**
 	 * The checks a password login would get, then the plugin's own veto.
 	 *
-	 * Core's `authenticate` callbacks return early for a WP_User (no password is
-	 * checked) but still run the multisite spam check, and lockout or ban plugins
-	 * hooked there can refuse. The veto must return exactly true to allow.
+	 * wp_signon() fires `wp_authenticate`, and core's password callbacks apply
+	 * `wp_authenticate_user` before they return a user; both are where lockout,
+	 * ban and disabled-account plugins refuse. Those callbacks return early for
+	 * a WP_User, so this method applies `wp_authenticate_user` itself (with an
+	 * empty password, as nothing was typed) before the `authenticate` filter,
+	 * which still runs the multisite spam check and whatever plugins hook there.
+	 * The veto must return exactly true to allow.
 	 *
 	 * @param \BlocLabs\SsiLogin\Verifier\PresentationResult $result
 	 */
 	private function check_user( \WP_User $user, $result ): ?\WP_Error {
-		/** This filter is documented in wp-includes/pluggable.php */
-		$checked = apply_filters( 'authenticate', $user, $user->user_login, '' ); // phpcs:ignore WordPress.NamingConventions.PrefixAllGlobals.NonPrefixedHooknameFound -- core filter, as wp_authenticate() applies it.
-		if ( is_wp_error( $checked ) ) {
-			return self::as_forbidden( $checked );
+		$login    = $user->user_login;
+		$password = '';
+		/** This action is documented in wp-includes/user.php */
+		do_action_ref_array( 'wp_authenticate', array( &$login, &$password ) ); // phpcs:ignore WordPress.NamingConventions.PrefixAllGlobals.NonPrefixedHooknameFound -- core action, fired as wp_signon() does.
+
+		/** This filter is documented in wp-includes/user.php */
+		$refusal = self::refusal( apply_filters( 'wp_authenticate_user', $user, '' ), $user ); // phpcs:ignore WordPress.NamingConventions.PrefixAllGlobals.NonPrefixedHooknameFound -- core filter, as wp_authenticate_username_password() applies it.
+		if ( null !== $refusal ) {
+			return $refusal;
 		}
-		if ( ! $checked instanceof \WP_User || $checked->ID !== $user->ID ) {
-			return new \WP_Error( 'bloclabs_ssi_refused', __( 'This account cannot log in right now.', 'bloclabs-ssi-login' ), array( 'status' => 403 ) );
+
+		/** This filter is documented in wp-includes/pluggable.php */
+		$refusal = self::refusal( apply_filters( 'authenticate', $user, $user->user_login, '' ), $user ); // phpcs:ignore WordPress.NamingConventions.PrefixAllGlobals.NonPrefixedHooknameFound -- core filter, as wp_authenticate() applies it.
+		if ( null !== $refusal ) {
+			return $refusal;
 		}
 
 		/**
@@ -138,6 +151,22 @@ final class LoginFinalizer {
 		return is_wp_error( $allow )
 			? self::as_forbidden( $allow )
 			: new \WP_Error( 'bloclabs_ssi_refused', __( 'This account cannot log in right now.', 'bloclabs-ssi-login' ), array( 'status' => 403 ) );
+	}
+
+	/**
+	 * What a login filter answered, as a refusal or null to go on: a WP_Error
+	 * refuses with its own message, and so does anything but the same user.
+	 *
+	 * @param mixed $checked
+	 */
+	private static function refusal( $checked, \WP_User $user ): ?\WP_Error {
+		if ( is_wp_error( $checked ) ) {
+			return self::as_forbidden( $checked );
+		}
+		if ( ! $checked instanceof \WP_User || $checked->ID !== $user->ID ) {
+			return new \WP_Error( 'bloclabs_ssi_refused', __( 'This account cannot log in right now.', 'bloclabs-ssi-login' ), array( 'status' => 403 ) );
+		}
+		return null;
 	}
 
 	/**
