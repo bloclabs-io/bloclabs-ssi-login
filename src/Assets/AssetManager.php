@@ -33,10 +33,12 @@ final class AssetManager {
 	/** Keep browser REST requests on wp-login.php's origin, including scheme and port. */
 	public function rest_base(): string {
 		$rest = rest_url( Routes::NAMESPACE . '/' );
-		$site = site_url();
+		// Match the binding cookie's HTTPS policy when TLS terminates before PHP.
+		$scheme = $this->settings->site_is_https() ? 'https' : null;
+		$site   = site_url( '', $scheme );
 		foreach ( array( PHP_URL_SCHEME, PHP_URL_HOST, PHP_URL_PORT ) as $part ) {
 			if ( wp_parse_url( $rest, $part ) !== wp_parse_url( $site, $part ) ) {
-				return site_url( 'index.php?rest_route=/' . Routes::NAMESPACE . '/' );
+				return site_url( 'index.php?rest_route=/' . Routes::NAMESPACE . '/', $scheme );
 			}
 		}
 		return $rest;

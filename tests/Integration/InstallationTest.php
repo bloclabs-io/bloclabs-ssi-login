@@ -20,10 +20,28 @@ final class InstallationTest extends IntegrationTestCase {
 		update_option( 'home', 'https://public.example' );
 		update_option( 'siteurl', 'https://login.example/wp' );
 		$assets = new AssetManager( new Settings() );
-		$this->assertSame( site_url( 'index.php?rest_route=/bloclabs-ssi/v1/' ), $assets->rest_base() );
+		$this->assertSame( 'https://login.example/wp/index.php?rest_route=/bloclabs-ssi/v1/', $assets->rest_base() );
 		update_option( 'home', 'http://login.example/wp' );
 		update_option( 'siteurl', 'http://login.example/wp' );
 		$this->assertSame( rest_url( 'bloclabs-ssi/v1/' ), $assets->rest_base() );
+	}
+
+	public function test_tls_proxy_preserves_https_for_same_and_split_hosts(): void {
+		$https = $_SERVER['HTTPS'] ?? null;
+		unset( $_SERVER['HTTPS'] );
+		try {
+			update_option( 'home', 'https://login.example' );
+			update_option( 'siteurl', 'http://login.example' );
+			$assets = new AssetManager( new Settings() );
+			$this->assertSame( rest_url( 'bloclabs-ssi/v1/' ), $assets->rest_base() );
+			$this->assertSame( 'https', wp_parse_url( $assets->rest_base(), PHP_URL_SCHEME ) );
+			update_option( 'siteurl', 'http://admin.example/wp' );
+			$this->assertSame( 'https://admin.example/wp/index.php?rest_route=/bloclabs-ssi/v1/', $assets->rest_base() );
+		} finally {
+			if ( null !== $https ) {
+				$_SERVER['HTTPS'] = $https;
+			}
+		}
 	}
 
 	public function test_failed_create_stops_activation_and_retries_are_throttled(): void {
