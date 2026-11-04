@@ -1,8 +1,13 @@
 name: Claude Code Review
 
+# On request only (founder, 2026-11-03): Codex reviews every pull request when it opens (AGENTS.md).
+# Add the `claude-review` label to a pull request for a Claude review as well.
 on:
   pull_request:
-    types: [opened, synchronize, ready_for_review, reopened]
+    # ready_for_review: a label added while the PR was a draft still gets its review.
+    # synchronize: a new head starts a run that cancels a review of the old head (concurrency below);
+    # the job itself is skipped for it.
+    types: [labeled, ready_for_review, synchronize]
 
 # One review per PR at a time: a new push cancels the review of the previous head.
 concurrency:
@@ -15,6 +20,8 @@ jobs:
     # secrets, and their workflow changes must never run with ours.
     if: >-
       github.event.pull_request.draft == false &&
+      contains(github.event.pull_request.labels.*.name, 'claude-review') &&
+      (github.event.action == 'ready_for_review' || github.event.label.name == 'claude-review') &&
       github.event.pull_request.head.repo.full_name == github.repository
     runs-on: ubuntu-latest
     permissions:
