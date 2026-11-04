@@ -57,7 +57,7 @@ Done once per environment by an operator (FireFly's own tooling, or `firefly-mcp
 4. **Create the listener.** `POST /apis/ssi-login-attestor/listeners/LoginAttested`
    `{"topic": "ssi-login", "options": {"firstEvent": "newest"}}`. FireFly requires the `topic`. Put the returned
    `id` in the plugin setting `firefly_listener_id`.
-5. **Subscribe WordPress.** `wp bloclabs-ssi subscribe [--url=<internal url>]` creates:
+5. **Subscribe WordPress.** `wp bloclabs-ssi subscribe [--webhook-url=<internal url>]` creates:
    ```json
    {
      "name": "bloclabs-ssi-login",

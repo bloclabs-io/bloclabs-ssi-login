@@ -21,7 +21,7 @@ Visitors log in by presenting a credential from their identity wallet. A verifie
 1. Install and activate the plugin.
 2. Run a verifier bridge and a FireFly node with the SsiLoginAttestor contract (see docs/FIREFLY-FLOW.md on GitHub).
 3. Configure Settings → SSI Login (on multisite, as a network administrator), and put secrets in wp-config.php as BLOCLABS_SSI_* constants.
-4. Run `wp bloclabs-ssi subscribe` to create the FireFly webhook subscription.
+4. Run `wp bloclabs-ssi subscribe` to create the FireFly webhook subscription (add `--webhook-url=<internal address>` when FireFly reaches WordPress over a private network).
 
 == Changelog ==
 

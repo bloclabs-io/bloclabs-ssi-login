@@ -99,3 +99,54 @@ if ( ! function_exists( 'add_options_page' ) ) {
 		return 'settings_page_' . $menu_slug;
 	}
 }
+
+// Enough of WP-CLI and the HTTP API for the command tests (CliCommandTest).
+require __DIR__ . '/Stubs/WP_CLI.php';
+require __DIR__ . '/Stubs/WP_Error.php';
+
+if ( ! function_exists( 'is_wp_error' ) ) {
+	function is_wp_error( $thing ): bool {
+		return $thing instanceof WP_Error;
+	}
+}
+
+$GLOBALS['bloclabs_ssi_test_remote_requests'] = array();
+
+if ( ! function_exists( 'wp_remote_request' ) ) {
+	/** Records the request and answers with what the test scripted (default: 200 and an empty object). */
+	function wp_remote_request( string $url, array $args = array() ) {
+		$GLOBALS['bloclabs_ssi_test_remote_requests'][] = array(
+			'url'  => $url,
+			'args' => $args,
+		);
+		return $GLOBALS['bloclabs_ssi_test_remote_response'] ?? array(
+			'response' => array( 'code' => 200 ),
+			'body'     => '{}',
+		);
+	}
+}
+if ( ! function_exists( 'wp_remote_retrieve_response_code' ) ) {
+	function wp_remote_retrieve_response_code( $response ) {
+		return $response['response']['code'] ?? '';
+	}
+}
+if ( ! function_exists( 'wp_remote_retrieve_body' ) ) {
+	function wp_remote_retrieve_body( $response ): string {
+		return (string) ( $response['body'] ?? '' );
+	}
+}
+if ( ! function_exists( 'wp_json_encode' ) ) {
+	function wp_json_encode( $data, int $flags = 0, int $depth = 512 ) {
+		return json_encode( $data, $flags, $depth ); // phpcs:ignore WordPress.WP.AlternativeFunctions.json_encode_json_encode
+	}
+}
+if ( ! function_exists( 'rest_url' ) ) {
+	function rest_url( string $path = '' ): string {
+		return 'https://example.com/wp-json/' . ltrim( $path, '/' );
+	}
+}
+if ( ! function_exists( 'untrailingslashit' ) ) {
+	function untrailingslashit( string $value ): string {
+		return rtrim( $value, '/\\' );
+	}
+}
