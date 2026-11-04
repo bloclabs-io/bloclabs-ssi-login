@@ -116,6 +116,59 @@ final class CompleteRouteTest extends IntegrationTestCase {
 		$this->assertInstanceOf( \WP_User::class, get_userdata( $user_id ) );
 	}
 
+	/**
+	 * Lockout, ban and disabled-account plugins refuse from `wp_authenticate_user`
+	 * (or the `wp_authenticate` action), which core applies only inside its
+	 * password callbacks. The finalizer must reach them itself (#28).
+	 */
+	public function test_a_lockout_on_wp_authenticate_user_refuses_the_login(): void {
+		$user_id = self::factory()->user->create( array( 'role' => 'subscriber' ) );
+		$this->link_subject( $user_id );
+		$opened    = $this->open_attempt();
+		$public_id = (string) $opened['data']['attempt'];
+		$this->attest( $opened['row'] );
+		$this->reset_auth_cookies();
+
+		$seen = array();
+		add_action(
+			'wp_authenticate',
+			static function ( $login ) use ( &$seen ): void {
+				$seen[] = 'wp_authenticate:' . $login;
+			}
+		);
+		add_filter(
+			'wp_authenticate_user',
+			static function ( $user, $password ) use ( &$seen ) {
+				$seen[] = 'wp_authenticate_user:' . ( $user instanceof \WP_User ? $user->ID : '?' ) . ':' . $password;
+				return new \WP_Error( 'too_many_retries', 'Too many failed login attempts.' );
+			},
+			10,
+			2
+		);
+		add_filter(
+			'authenticate',
+			static function ( $user ) use ( &$seen ) {
+				$seen[] = 'authenticate';
+				return $user;
+			},
+			30
+		);
+
+		$response = $this->complete( $public_id );
+
+		$this->assert_http( 403, $response );
+		$this->assertSame( 'too_many_retries', $this->error_code( $response ) );
+		$this->assertSame(
+			array( 'wp_authenticate:' . get_userdata( $user_id )->user_login, 'wp_authenticate_user:' . $user_id . ':' ),
+			$seen,
+			'the lockout refuses before the authenticate filter runs'
+		);
+		$this->assertSame( 'failed', $this->attempt_row( $public_id )['status'] );
+		$this->assertSame( 0, get_current_user_id() );
+		$this->assertSame( array(), $this->auth_cookie_users() );
+		$this->assertInstanceOf( \WP_User::class, get_userdata( $user_id ) );
+	}
+
 	public function test_success_sets_the_auth_cookie_and_consumes_the_attempt_once(): void {
 		$user_id = self::factory()->user->create( array( 'role' => 'subscriber' ) );
 		$this->link_subject( $user_id );

@@ -5,6 +5,7 @@
 - `wp bloclabs-ssi subscribe` takes the webhook address as `--webhook-url`. It used to declare `--url`, which WP-CLI
   keeps for itself as its global site-URL option, so the command never received it and subscribed FireFly to the
   site's public REST URL regardless (#39).
+- AGENTS.md: Britney tests and deploys; Fable, Codex and Grok code and review (founder, 2026-11-04). Repository process only, no code change.
 - README brought up to date (multisite requirements, the integration-test command, agent login marked as planned, the WordPress.org listing as a founder decision). Docs only, no code change.
 - Reference verifier bridge in `bridge/` (TypeScript on Node 22, no runtime dependencies, ADR 0005): the two routes
   of docs/BRIDGE-API.md behind a bearer token; OpenID4VP 1.0 delegated to walt.id verifier-api2 (1.2.0) through its
@@ -32,3 +33,12 @@
   for roles (Fable writes the code here). Repository process only, no code change.
 - Fix from the Fable review (#27): on multisite, the settings page and its save require `manage_network_options`,
   so a site administrator cannot point the plugin at another bridge or FireFly, or turn on account creation.
+- Fix from the Fable review (#28): a credential login now runs the `wp_authenticate` action and the
+  `wp_authenticate_user` filter before `authenticate`, so lockout, ban and disabled-account plugins refuse it as they
+  would a password login.
+- Fix from the Fable review (#26): behind a proxy the rate-limit key is taken `client_ip_proxies` entries from the
+  right of the forwarded-for header, never from the left, where the sender writes; a header that cannot name the
+  client refuses the request. A client is an IPv4 address or an IPv6 /64, a site-wide cap (`max_pending_total`,
+  default 500 per 10 minutes) backs the per-client one, both caps are on the settings page, and they are checked
+  again by the row's rank after the insert, so a parallel burst cannot overshoot. Schema version 3 adds an index
+  on `created_at` for the site-wide count.

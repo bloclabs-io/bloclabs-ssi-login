@@ -10,6 +10,7 @@ declare(strict_types=1);
 namespace BlocLabs\SsiLogin\Rest;
 
 use BlocLabs\SsiLogin\Config\Settings;
+use BlocLabs\SsiLogin\Session\Attempt;
 use BlocLabs\SsiLogin\Session\AttemptRepository;
 use BlocLabs\SsiLogin\Session\AttemptStatus;
 use BlocLabs\SsiLogin\Session\BrowserBinding;
@@ -66,8 +67,10 @@ final class InitiateController extends BrowserController {
 		if ( null === $ip_hash ) {
 			return $unavailable;
 		}
-		if ( $this->attempts->count_recent_for_ip( $ip_hash, self::RATE_WINDOW ) >= $this->settings->int( 'max_pending_per_ip' ) ) {
-			return new \WP_Error( 'bloclabs_ssi_rate_limited', __( 'Too many login requests. Please wait a few minutes.', 'bloclabs-ssi-login' ), array( 'status' => 429 ) );
+		// Checked before the row exists, so a client already over the cap costs no cookie and no row ...
+		$limited = $this->rate_limited( $ip_hash );
+		if ( null !== $limited ) {
+			return $limited;
 		}
 
 		$ttl      = max( 60, min( 600, $this->settings->int( 'attempt_ttl' ) ) );
@@ -81,6 +84,13 @@ final class InitiateController extends BrowserController {
 		}
 
 		$attempt = $this->attempts->open( $binding, $ip_hash, $ttl, '' !== $redirect ? $redirect : null );
+
+		// ... and again by this row's rank in the window, so a parallel burst cannot overshoot.
+		$limited = $this->rate_limited( $ip_hash, $attempt );
+		if ( null !== $limited ) {
+			$this->attempts->transition( $attempt, AttemptStatus::Failed );
+			return $limited;
+		}
 
 		try {
 			$offer = $this->verifier->create_request(
@@ -111,5 +121,25 @@ final class InitiateController extends BrowserController {
 		);
 		$response->header( 'Cache-Control', 'no-store' );
 		return $response;
+	}
+
+	/**
+	 * The per-client cap (an IPv4 address or an IPv6 /64) and the site-wide cap
+	 * that backs it, so that neither one flooding client nor many keep the
+	 * verifier and the attempts table busy.
+	 *
+	 * @param Attempt|null $attempt After the insert: counts up to this attempt, its rank in the window.
+	 */
+	private function rate_limited( string $ip_hash, ?Attempt $attempt = null ): ?\WP_Error {
+		// Once the new row exists the count includes it, and that row may be the cap-th one.
+		$own = null === $attempt ? 0 : 1;
+
+		if ( $this->attempts->count_recent( self::RATE_WINDOW, $ip_hash, $attempt ) - $own >= $this->settings->int( 'max_pending_per_ip' ) ) {
+			return new \WP_Error( 'bloclabs_ssi_rate_limited', __( 'Too many login requests. Please wait a few minutes.', 'bloclabs-ssi-login' ), array( 'status' => 429 ) );
+		}
+		if ( $this->attempts->count_recent( self::RATE_WINDOW, null, $attempt ) - $own >= $this->settings->int( 'max_pending_total' ) ) {
+			return new \WP_Error( 'bloclabs_ssi_rate_limited', __( 'Credential login is busy right now. Please wait a few minutes.', 'bloclabs-ssi-login' ), array( 'status' => 429 ) );
+		}
+		return null;
 	}
 }

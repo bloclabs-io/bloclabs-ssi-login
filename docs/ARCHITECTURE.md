@@ -87,7 +87,7 @@ flowchart TB
 | `verifier_ref` | The bridge's request id |
 | `subject_commitment`, `presentation_hash` | Copied from the on-chain event; checked against the bridge's answer at completion |
 | `firefly_event_id`, `tx_ref` | Audit trail back to FireFly and the chain |
-| `ip_hash` | Keyed hash of the client IP, for rate limiting only |
+| `ip_hash` | Keyed hash of the client (IPv4 address or IPv6 /64), for rate limiting only |
 
 **Identity** (`{prefix}bloclabs_ssi_identities`): `subject_hash` = HMAC-SHA256(plugin key, subject id) → `user_id`,
 plus a short display label. The key is the plugin's own (`bloclabs_ssi_subject_key`, or

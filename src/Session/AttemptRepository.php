@@ -117,20 +117,29 @@ final class AttemptRepository {
 	}
 
 	/**
-	 * Attempts opened from one client in the window, whatever became of them:
-	 * failed and expired attempts cost a verifier call and a row too.
+	 * Attempts opened in the window, whatever became of them: failed and
+	 * expired attempts cost a verifier call and a row too.
+	 *
+	 * @param string|null  $ip_hash One client's attempts, or every client's for the site-wide cap.
+	 * @param Attempt|null $up_to   Count only attempts opened up to this one (by id). Checked
+	 *                              after the insert, this is the attempt's rank in the window,
+	 *                              which a parallel burst cannot push past the cap: ids are unique.
 	 */
-	public function count_recent_for_ip( string $ip_hash, int $window ): int {
+	public function count_recent( int $window, ?string $ip_hash = null, ?Attempt $up_to = null ): int {
 		global $wpdb;
 		$table = Schema::attempts_table();
+		$sql   = "SELECT COUNT(*) FROM {$table} WHERE created_at >= %s"; // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared
+		$args  = array( gmdate( 'Y-m-d H:i:s', time() - $window ) );
+		if ( null !== $ip_hash ) {
+			$sql   .= ' AND ip_hash = %s';
+			$args[] = $ip_hash;
+		}
+		if ( null !== $up_to ) {
+			$sql   .= ' AND id <= %d';
+			$args[] = $up_to->id;
+		}
 
-		return (int) $wpdb->get_var(
-			$wpdb->prepare(
-				"SELECT COUNT(*) FROM {$table} WHERE ip_hash = %s AND created_at >= %s", // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared
-				$ip_hash,
-				gmdate( 'Y-m-d H:i:s', time() - $window )
-			)
-		);
+		return (int) $wpdb->get_var( $wpdb->prepare( $sql, ...$args ) ); // phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared -- placeholders only, built above; every value goes through prepare().
 	}
 
 	/**
