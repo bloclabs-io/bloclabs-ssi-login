@@ -12,6 +12,7 @@ namespace BlocLabs\SsiLogin\Tests\Unit;
 use BlocLabs\SsiLogin\FireFly\Attestation;
 use BlocLabs\SsiLogin\Support\ClientIp;
 use BlocLabs\SsiLogin\Verifier\PresentationOffer;
+use BlocLabs\SsiLogin\Verifier\PresentationResult;
 use BlocLabs\SsiLogin\Verifier\VerifierException;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
@@ -54,6 +55,71 @@ final class SupportTest extends TestCase {
 				'wallet_url' => 'javascript:alert(1)',
 			)
 		);
+	}
+
+	public function test_an_overlong_request_id_is_refused(): void {
+		$this->expectException( VerifierException::class );
+		PresentationOffer::from_array(
+			array(
+				'id'         => str_repeat( 'r', PresentationOffer::MAX_REF_LENGTH + 1 ),
+				'wallet_url' => 'openid4vp://?client_id=x509_san_dns:example.com&request_uri=https%3A%2F%2Fv.example%2Fr%2F1',
+			)
+		);
+	}
+
+	/**
+	 * The bridge's hash is compared with the on-chain one, which the decoder
+	 * normalises; a "0x" prefix or upper case must not read as a mismatch (#30).
+	 */
+	public function test_the_presentation_hash_is_normalised_like_the_on_chain_value(): void {
+		$result = PresentationResult::from_array(
+			array(
+				'subject_id'        => 'did:example:holder',
+				'presentation_hash' => '0x' . str_repeat( 'AB', 32 ),
+			)
+		);
+
+		$this->assertSame( str_repeat( 'ab', 32 ), $result->presentation_hash );
+		$this->assertNull( $result->issuer );
+		$this->assertSame( array(), $result->claims );
+	}
+
+	/**
+	 * @return array<string, array{0: array<string, mixed>}>
+	 */
+	public static function unusable_results(): array {
+		return array(
+			'empty hash'   => array(
+				array(
+					'subject_id'        => 'did:example:holder',
+					'presentation_hash' => '',
+				),
+			),
+			'short hash'   => array(
+				array(
+					'subject_id'        => 'did:example:holder',
+					'presentation_hash' => 'abc',
+				),
+			),
+			'not hex'      => array(
+				array(
+					'subject_id'        => 'did:example:holder',
+					'presentation_hash' => str_repeat( 'zz', 32 ),
+				),
+			),
+			'missing hash' => array( array( 'subject_id' => 'did:example:holder' ) ),
+			'no subject'   => array( array( 'presentation_hash' => str_repeat( 'ab', 32 ) ) ),
+		);
+	}
+
+	#[DataProvider( 'unusable_results' )]
+	public function test_an_unusable_result_fails_the_attempt_rather_than_retrying( array $data ): void {
+		try {
+			PresentationResult::from_array( $data );
+			$this->fail( 'accepted' );
+		} catch ( VerifierException $e ) {
+			$this->assertFalse( $e->is_transient() );
+		}
 	}
 
 	public function test_subject_commitment_is_blinded_per_attempt(): void {

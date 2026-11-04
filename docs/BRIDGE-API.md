@@ -48,6 +48,8 @@ Response `201`:
   "dc_api": null
 }
 ```
+- `id`: the bridge's id for the request, at most 191 characters. WordPress stores it and sends it back on the
+  result route.
 - `wallet_url`: what the browser shows as a QR code and opens as a same-device link. Allowed schemes are
   `openid4vp` and `https` unless the site widens them.
 - `dc_api`: optional, reserved for the Digital Credentials API path (roadmap): the object to pass to
@@ -73,7 +75,8 @@ Response `200`:
   the RFC 9278 thumbprint URI of `cnf.jwk` (`urn:ietf:params:oauth:jwk-thumbprint:sha-256:…`), or the DID behind
   `cnf.kid` without its fragment.
 - `issuer`: the credential issuer, or `null` when the credential names none.
-- `presentation_hash`: lowercase hex SHA-256 of the RFC 8785 canonical JSON of the `vp_token` as the verifier
+- `presentation_hash`: lowercase hex SHA-256, 64 characters with no `0x` prefix (WordPress strips one, but
+  writes none), of the RFC 8785 canonical JSON of the `vp_token` as the verifier
   parsed it: the JSON object that maps each credential-query id to its list of presentations, with object keys
   sorted, no whitespace and JSON string escaping. For one presentation that is
   `sha256('{"<credential query id>":["<presentation>"]}')`. It is not a hash of the bytes the wallet posted:
@@ -88,10 +91,11 @@ Response `200`:
 Answer `409` while the request is undecided, `404` once the result has expired. *Reference bridge:*
 `409 {"error":"pending"}` until FireFly accepted the attestation, `200` for a verified login,
 `404 {"error":"rejected"}` after a rejection, `404 {"error":"failed"}` when no attestation could be made, and
-`404 {"error":"not_found"}` once the request was deleted. WordPress treats any failure here
-as transient: the attempt stays verified and the browser retries `/complete` a few times, so the bridge may attest a
-moment before it serves the result. Keep results for at least the
-attempt lifetime plus a minute, then delete them.
+`404 {"error":"not_found"}` once the request was deleted. WordPress retries `409`, `408`, `425`, `429`, any `5xx`
+and an unreachable bridge: the attempt stays verified and the browser retries `/complete` a few times, so the
+bridge may attest a moment before it serves the result. `404` and every other `4xx` fail the attempt for good, as
+does a `200` whose body WordPress cannot use, so answer `409`, never `404`, until the result is readable. Keep
+results for at least the attempt lifetime plus a minute, then delete them.
 
 ## What the bridge must do on each wallet response
 

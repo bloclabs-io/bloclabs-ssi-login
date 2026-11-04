@@ -56,3 +56,10 @@
   same subject answers "retry" instead of "not linked"; `identities.issuer` is a TEXT column (schema version 4), so
   long `did:jwk` and `did:ion` issuers no longer refuse every login; and the settings form no longer unslashes
   twice, so backslashes typed into secrets survive.
+- Fixes from the Fable review (#30): the bridge's 408, 425 and 429 are retried like 409 and 5xx instead of failing
+  a verified attempt; a result whose `presentation_hash` is not 64 hex characters (a `0x` prefix is stripped) or
+  that names no subject fails the attempt at once instead of reading as a commitment mismatch, and
+  `docs/BRIDGE-API.md` says which answers WordPress retries (409, never 404, until the result is readable) and that
+  the hash carries no `0x` prefix; a login attempt that cannot be stored answers 503 without a binding cookie
+  instead of a 500; and a bridge request id that cannot be stored (over 191 characters) is refused at `/initiate`
+  instead of failing every completion of that attempt.

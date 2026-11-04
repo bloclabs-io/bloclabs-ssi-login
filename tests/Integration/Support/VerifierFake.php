@@ -37,6 +37,8 @@ final class VerifierFake implements VerifierClient {
 
 	public ?PresentationRequest $last_request = null;
 
+	public ?string $verifier_ref = null;
+
 	public static function instance(): self {
 		return self::$instance ??= new self();
 	}
@@ -50,6 +52,7 @@ final class VerifierFake implements VerifierClient {
 		$this->creates           = 0;
 		$this->fetches           = 0;
 		$this->last_request      = null;
+		$this->verifier_ref      = null;
 	}
 
 	public function create_request( PresentationRequest $request ): PresentationOffer {
@@ -60,7 +63,7 @@ final class VerifierFake implements VerifierClient {
 		}
 
 		return new PresentationOffer(
-			'vr_integration',
+			$this->verifier_ref ?? 'vr_integration',
 			'openid4vp://?client_id=x509_san_dns:verifier.example&request_uri=https%3A%2F%2Fverifier.example%2Frequest'
 		);
 	}

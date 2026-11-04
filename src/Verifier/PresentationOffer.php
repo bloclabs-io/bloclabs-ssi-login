@@ -11,6 +11,9 @@ namespace BlocLabs\SsiLogin\Verifier;
 
 final class PresentationOffer {
 
+	/** The attempts table stores the id in a varchar(191). */
+	public const MAX_REF_LENGTH = 191;
+
 	/**
 	 * @param string                    $verifier_ref The verifier's id for the request.
 	 * @param string                    $wallet_url   The authorization request URL (openid4vp://… or a universal link), shown as a QR code and a same-device link.
@@ -29,8 +32,8 @@ final class PresentationOffer {
 		$ref = isset( $data['id'] ) && is_string( $data['id'] ) ? $data['id'] : '';
 		$url = isset( $data['wallet_url'] ) && is_string( $data['wallet_url'] ) ? $data['wallet_url'] : '';
 
-		if ( '' === $ref || ! self::is_wallet_url( $url ) ) {
-			throw new VerifierException( 'The verifier returned an unusable presentation request.' );
+		if ( '' === $ref || strlen( $ref ) > self::MAX_REF_LENGTH || ! self::is_wallet_url( $url ) ) {
+			throw VerifierException::unusable( 'The verifier returned an unusable presentation request.' );
 		}
 
 		return new self( $ref, $url, isset( $data['dc_api'] ) && is_array( $data['dc_api'] ) ? $data['dc_api'] : null );

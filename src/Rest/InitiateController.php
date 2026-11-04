@@ -83,7 +83,13 @@ final class InitiateController extends BrowserController {
 			return $unavailable;
 		}
 
-		$attempt = $this->attempts->open( $binding, $ip_hash, $ttl, '' !== $redirect ? $redirect : null );
+		try {
+			$attempt = $this->attempts->open( $binding, $ip_hash, $ttl, '' !== $redirect ? $redirect : null );
+		} catch ( \RuntimeException $e ) {
+			// No row (a missing or read-only table), so no attempt for the cookie to bind, and no 500 with a path in it.
+			$this->binding->clear();
+			return $unavailable;
+		}
 
 		// ... and again by this row's rank in the window, so a parallel burst cannot overshoot.
 		$limited = $this->rate_limited( $ip_hash, $attempt );
@@ -107,7 +113,11 @@ final class InitiateController extends BrowserController {
 			return $unavailable;
 		}
 
-		$this->attempts->set_verifier_ref( $attempt, $offer->verifier_ref );
+		if ( ! $this->attempts->set_verifier_ref( $attempt, $offer->verifier_ref ) ) {
+			// Without the bridge's id the attempt could never complete: fail it here, not at /complete.
+			$this->attempts->transition( $attempt, AttemptStatus::Failed );
+			return $unavailable;
+		}
 
 		$response = new \WP_REST_Response(
 			array(

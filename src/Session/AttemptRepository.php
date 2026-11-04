@@ -89,9 +89,12 @@ final class AttemptRepository {
 		return 1 === $updated;
 	}
 
-	public function set_verifier_ref( Attempt $attempt, string $ref ): void {
+	/**
+	 * @return bool False when the reference was not stored (wpdb refuses a value longer than the column).
+	 */
+	public function set_verifier_ref( Attempt $attempt, string $ref ): bool {
 		global $wpdb;
-		$wpdb->update( Schema::attempts_table(), array( 'verifier_ref' => $ref ), array( 'id' => $attempt->id ) );
+		return 1 === $wpdb->update( Schema::attempts_table(), array( 'verifier_ref' => $ref ), array( 'id' => $attempt->id ) );
 	}
 
 	/**
