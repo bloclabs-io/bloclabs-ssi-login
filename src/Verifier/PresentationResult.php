@@ -2,8 +2,9 @@
 /**
  * What the verifier verified, fetched only after the chain attested it.
  *
- * WordPress checks it against the on-chain commitments before using it, so
- * the verifier's HTTP answer and its on-chain record must agree.
+ * WordPress binds only the subject and presentation hash to the on-chain
+ * commitments. Issuer and claims are authenticated bridge HTTP data; WordPress
+ * does not recompute the presentation hash from them or attest them separately.
  *
  * @package BlocLabs\SsiLogin
  */

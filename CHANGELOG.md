@@ -2,6 +2,8 @@
 
 ## 0.1.0-dev (unreleased)
 
+- Correct finality, webhook delivery, contract build and claim-retention documentation; add regression coverage for atomic state transitions, login ordering, cookie attributes and version-aware WordPress test installs (#33).
+
 - `wp bloclabs-ssi subscribe` takes the webhook address as `--webhook-url`. It used to declare `--url`, which WP-CLI
   keeps for itself as its global site-URL option, so the command never received it and subscribed FireFly to the
   site's public REST URL regardless (#39).

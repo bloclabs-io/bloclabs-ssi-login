@@ -44,6 +44,17 @@ sequenceDiagram
 
 Done once per environment by an operator (FireFly's own tooling, or `firefly-mcp`):
 
+Build with **solc 0.8.28**, explicitly targeting **Paris** (the same EVM target as CI):
+
+```sh
+solc --version # must report 0.8.28
+solc --optimize --evm-version paris --abi --bin contracts/SsiLoginAttestor.sol -o build
+```
+
+Use the resulting ABI and bytecode below. Solidity 0.8.24+ defaults to an EVM target
+that emits `PUSH0`; a pre-Shanghai Besu QBFT genesis rejects that opcode. The explicit
+Paris target keeps the deployment compatible; do not compile with an implicit default.
+
 1. **Deploy the contract.** `POST /contracts/deploy?confirm=true`
    ```json
    {"contract": "0x<bytecode>", "definition": [<abi>], "input": ["<verifier signing address>"], "key": "<deployer>"}
@@ -72,7 +83,7 @@ Done once per environment by an operator (FireFly's own tooling, or `firefly-mcp
    }
    ```
    `fastack: false` makes FireFly wait for WordPress's 2xx before acknowledging, so a failed delivery is retried.
-   `readAhead` lets independent deliveries run in parallel; WordPress is idempotent.
+   `readAhead` buffers events; with `fastack: false`, one delivery goroutine processes each event and its full retry cycle before the next event. It does not parallelise HTTP deliveries. Slow requests therefore block the queue. Operators can set `httpOptions.requestTimeout` in the webhook options to bound each request; choose it above measured WordPress processing time, since a shorter timeout can cause retries after a successful write. WordPress is idempotent.
 
 ## Runtime calls
 
@@ -126,7 +137,7 @@ page after page until a short page (at most 20 pages). FireFly filters take an o
 `-` before a sort field means descending. FireFly cannot filter on decoded output, so each page is decoded and
 matched by `correlationId` in WordPress.
 
-**Reorganisations.** A log the chain later drops arrives with `info.removed: true`; WordPress ignores it.
+**Reorganisations.** evmconnect does not set `Removed`, and checkpointing / `protocol_id` deduplication means an applied log does not later deliver a removal notice. The decoder defensively ignores `info.removed: true` if another connector sends it, but cannot undo a verified attempt or a session. On chains that can reorganise, require `confirmations.required > 0` and size the delay for the chain's risk. This reduces exposure before delivery; it does not undo a reorg deeper than the confirmation window. QBFT relies on its finality assumptions.
 
 ## What FireFly is, and is not, doing here
 

@@ -90,10 +90,10 @@ flowchart TB
 | `ip_hash` | Keyed hash of the client (IPv4 address or IPv6 /64), for rate limiting only |
 
 **Identity** (`{prefix}bloclabs_ssi_identities`): `subject_hash` = HMAC-SHA256(plugin key, subject id) → `user_id`,
-plus a short display label. The key is the plugin's own (`bloclabs_ssi_subject_key`, or
+plus a short display label and the issuer DID, retained for the life of the link/account. The key is the plugin's own (`bloclabs_ssi_subject_key`, or
 `BLOCLABS_SSI_SUBJECT_KEY`), so rotating WordPress salts does not unlink every credential.
 
-Nothing else is stored. Claims are fetched from the bridge at completion, used, and dropped.
+Under `auto_provision`, the sanitized `name` claim becomes the new WordPress account's `display_name` and persists with that account. Other claims are fetched from the bridge at completion and dropped unless an extension stores them. Attempt rows are purged separately; their retention does not remove account or identity data.
 
 ## Trust boundaries
 
@@ -106,8 +106,7 @@ Nothing else is stored. Claims are fetched from the bridge at completion, used, 
 4. **Bridge → chain.** Only addresses the contract owner authorised can emit `LoginAttested`. The contract listener
    is bound to the contract address, and the decoder accepts only the configured listener.
 5. **Bridge's HTTP answer vs. its on-chain record.** At completion WordPress recomputes
-   `sha256(correlation_id ":" blinding_secret ":" subject_id)` and compares the presentation hash. A bridge that lies over HTTP
-   contradicts its own signed on-chain record.
+   `sha256(correlation_id ":" blinding_secret ":" subject_id)` and compares the presentation hash. This binds the subject and presentation hash only. WordPress does not recompute that hash from the HTTP claims: the issuer and disclosed claims passed to hooks are unattested HTTP data. Extensions must trust the authenticated bridge for those fields, and must not treat them as separately proven on chain.
 
 See [SECURITY-MODEL.md](SECURITY-MODEL.md) for threats and mitigations.
 
@@ -121,6 +120,7 @@ See [SECURITY-MODEL.md](SECURITY-MODEL.md) for threats and mitigations.
 | `bloclabs_ssi_provision_user_data` | filter | Shape (or refuse) accounts created for new subjects |
 | `bloclabs_ssi_allow_login` | filter | Veto a login after the credential checked out; anything but `true` refuses |
 | `bloclabs_ssi_wallet_url_schemes` | filter | Allowed wallet URL schemes (default `openid4vp`, `https`) |
+| `bloclabs_ssi_attempt_retention` | filter | Seconds to retain attempt rows (default one day); does not govern identity/account data |
 | `bloclabs_ssi_client_ip` | filter | Visitor IP behind unusual proxies |
 | `bloclabs_ssi_login_template` | filter | Replace the login block markup |
 | `bloclabs_ssi_attested` | action | An attestation settled an attempt |

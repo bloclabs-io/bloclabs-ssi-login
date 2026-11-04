@@ -92,7 +92,7 @@ final class FireFlyClient {
 					'headers'    => $headers,
 					// Ack only after WordPress answers 2xx, so a failed delivery is retried.
 					'fastack'    => false,
-					// Deliveries are independent (WordPress is idempotent), so let a few run in parallel.
+					// Buffer ahead; fastack=false still delivers serially, including each retry cycle.
 					'readAhead'  => 25,
 					'retry'      => array(
 						'enabled'      => true,
