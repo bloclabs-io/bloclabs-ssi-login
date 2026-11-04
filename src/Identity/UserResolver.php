@@ -151,7 +151,10 @@ final class UserResolver {
 				return self::retry();
 			}
 			$created = false;
-			add_user_to_blog( get_current_blog_id(), $user_id, $data['role'] );
+			// The network can refuse this site the account (can_add_user_to_blog): then it is not linked here.
+			if ( is_wp_error( add_user_to_blog( get_current_blog_id(), $user_id, $data['role'] ) ) ) {
+				return null;
+			}
 		}
 
 		if ( ! $this->identities->link( $hash, $user_id, IdentityRepository::label( $result->subject_id, $this->settings->subject_key() ), $result->issuer ) ) {
@@ -202,10 +205,11 @@ final class UserResolver {
 	/**
 	 * An account this request created goes away everywhere: on multisite
 	 * wp_delete_user() would only remove it from this site and leave its login
-	 * taken. An adopted account goes back to the network, which may still use it.
+	 * taken. An adopted account, or one that another site of the network adopted
+	 * while this request ran (see stranded()), only leaves this site.
 	 */
 	private function discard( int $user_id, bool $created ): void {
-		if ( ! $created ) {
+		if ( ! $created || $this->held_elsewhere( $user_id ) ) {
 			remove_user_from_blog( $user_id, get_current_blog_id() );
 			return;
 		}
@@ -216,6 +220,23 @@ final class UserResolver {
 			return;
 		}
 		wp_delete_user( $user_id );
+	}
+
+	/**
+	 * On multisite: whether a site other than this one holds the account. A site
+	 * that adopts it after this check is left with a link to a deleted user, which
+	 * resolve() treats as no link, so that subject's next login there provisions again.
+	 */
+	private function held_elsewhere( int $user_id ): bool {
+		if ( ! is_multisite() ) {
+			return false;
+		}
+		foreach ( array_keys( get_blogs_of_user( $user_id, true ) ) as $blog_id ) {
+			if ( get_current_blog_id() !== (int) $blog_id ) {
+				return true;
+			}
+		}
+		return false;
 	}
 
 	private static function retry(): \WP_Error {

@@ -292,8 +292,132 @@ final class CompleteRouteTest extends IntegrationTestCase {
 		$this->assertSame( $racer, get_current_user_id() );
 	}
 
+	/**
+	 * On multisite, a network account holding the subject's generated login that
+	 * no site holds (a refused provision an administrator removed from the site,
+	 * or a login on another site under a shared subject key) is adopted instead
+	 * of blocking the subject for good (#29).
+	 *
+	 * @group ms-required
+	 */
+	public function test_a_stranded_network_account_with_the_subjects_login_is_adopted(): void {
+		$this->skipWithoutMultisite();
+		$this->configure( array( 'linking_policy' => Settings::AUTO_PROVISION ) );
+		$stranded  = $this->stranded_network_user();
+		$opened    = $this->open_attempt();
+		$public_id = (string) $opened['data']['attempt'];
+		$this->attest( $opened['row'] );
+
+		$response = $this->complete( $public_id );
+
+		$this->assert_http( 200, $response );
+		$this->assertSame( $stranded, get_current_user_id() );
+		$this->assertTrue( is_user_member_of_blog( $stranded ) );
+		$this->assertContains( 'subscriber', get_userdata( $stranded )->roles );
+		$this->assertSame( $stranded, Plugin::instance()->identities()->user_id_for( $this->subject_hash() ) );
+		$this->assertSame( 'consumed', $this->attempt_row( $public_id )['status'] );
+	}
+
+	/**
+	 * A network plugin can refuse the site an account through can_add_user_to_blog,
+	 * and add_user_to_blog() then returns a WP_Error without adding it. That refusal
+	 * refuses the login: nothing is linked and no cookie is set for an account the
+	 * site never got (#29, review).
+	 *
+	 * @group ms-required
+	 */
+	public function test_a_network_refusal_to_add_the_adopted_account_refuses_the_login(): void {
+		$this->skipWithoutMultisite();
+		$this->configure( array( 'linking_policy' => Settings::AUTO_PROVISION ) );
+		$stranded = $this->stranded_network_user();
+		add_filter( 'can_add_user_to_blog', static fn () => new \WP_Error( 'user_cannot_be_added', 'refused by the network' ) );
+		$opened    = $this->open_attempt();
+		$public_id = (string) $opened['data']['attempt'];
+		$this->attest( $opened['row'] );
+
+		$response = $this->complete( $public_id );
+
+		$this->assert_http( 403, $response );
+		$this->assertSame( 'bloclabs_ssi_not_linked', $this->error_code( $response ) );
+		$this->assertSame( 'failed', $this->attempt_row( $public_id )['status'] );
+		$this->assertSame( 0, get_current_user_id() );
+		$this->assertSame( array(), $this->auth_cookie_users() );
+		$this->assertNull( Plugin::instance()->identities()->user_id_for( $this->subject_hash() ), 'nothing was linked' );
+		$this->assertFalse( is_user_member_of_blog( $stranded ) );
+		$this->assertInstanceOf( \WP_User::class, get_userdata( $stranded ), 'the network account is left alone' );
+	}
+
+	/**
+	 * Site A creates the account and site B, under a shared subject key, adopts it
+	 * before A's login is refused. A's clean-up only leaves A; it never deletes the
+	 * account B now holds from the network (#29, review).
+	 *
+	 * @group ms-required
+	 */
+	public function test_a_refused_provision_leaves_an_account_another_site_adopted_meanwhile(): void {
+		$this->skipWithoutMultisite();
+		$this->configure( array( 'linking_policy' => Settings::AUTO_PROVISION ) );
+		$other_site = (int) self::factory()->blog->create();
+		add_filter(
+			'bloclabs_ssi_resolve_user',
+			static function ( $user_id ) use ( $other_site ) {
+				// The other site adopts the account this request just created; then this login is refused.
+				add_user_to_blog( $other_site, (int) $user_id, 'subscriber' );
+				return null;
+			}
+		);
+		$opened    = $this->open_attempt();
+		$public_id = (string) $opened['data']['attempt'];
+		$this->attest( $opened['row'] );
+
+		$response = $this->complete( $public_id );
+
+		$this->assert_http( 403, $response );
+		$this->assertSame( 'bloclabs_ssi_not_linked', $this->error_code( $response ) );
+		$user = get_user_by( 'login', $this->provisioned_login() );
+		$this->assertInstanceOf( \WP_User::class, $user, 'the account the other site holds still exists' );
+		$this->assertTrue( is_user_member_of_blog( $user->ID, $other_site ) );
+		$this->assertFalse( is_user_member_of_blog( $user->ID ), 'but it left this site' );
+		$this->assertNull( Plugin::instance()->identities()->user_id_for( $this->subject_hash() ) );
+		$this->assertSame( 0, get_current_user_id() );
+	}
+
+	/**
+	 * A refused login of an adopted account hands it back to the network: removed
+	 * from this site, not deleted (#29).
+	 *
+	 * @group ms-required
+	 */
+	public function test_a_refusal_of_an_adopted_account_only_removes_it_from_this_site(): void {
+		$this->skipWithoutMultisite();
+		$this->configure( array( 'linking_policy' => Settings::AUTO_PROVISION ) );
+		$stranded = $this->stranded_network_user();
+		add_filter( 'bloclabs_ssi_resolve_user', '__return_null' );
+		$opened    = $this->open_attempt();
+		$public_id = (string) $opened['data']['attempt'];
+		$this->attest( $opened['row'] );
+
+		$response = $this->complete( $public_id );
+
+		$this->assert_http( 403, $response );
+		$this->assertInstanceOf( \WP_User::class, get_userdata( $stranded ) );
+		$this->assertFalse( is_user_member_of_blog( $stranded ) );
+		$this->assertNull( Plugin::instance()->identities()->user_id_for( $this->subject_hash() ) );
+	}
+
 	private function provisioned_login(): string {
 		return 'ssi-' . substr( $this->subject_hash(), 0, 12 );
+	}
+
+	/**
+	 * Multisite: a network account with this subject's generated login that no site holds.
+	 */
+	private function stranded_network_user(): int {
+		$user_id = (int) self::factory()->user->create( array( 'user_login' => $this->provisioned_login() ) );
+		remove_user_from_blog( $user_id, get_current_blog_id() );
+		$this->assertFalse( is_user_member_of_blog( $user_id ) );
+
+		return $user_id;
 	}
 
 	private function stored_issuer(): ?string {
