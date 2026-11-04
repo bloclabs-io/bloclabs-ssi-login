@@ -88,6 +88,7 @@ final class SettingsPage {
 			'firefly_namespace'    => array( __( 'Namespace', 'bloclabs-ssi-login' ), 'text', 'firefly' ),
 			'firefly_auth_header'  => array( __( 'FireFly Authorization header', 'bloclabs-ssi-login' ), 'secret', 'firefly', __( 'Only when an authenticating proxy fronts FireFly.', 'bloclabs-ssi-login' ) ),
 			'firefly_listener_id'  => array( __( 'Contract listener ID', 'bloclabs-ssi-login' ), 'text', 'firefly' ),
+			'attestor_address'     => array( __( 'Attestor contract address', 'bloclabs-ssi-login' ), 'text', 'firefly', __( 'Required: the emitting EVM contract address (0x followed by 40 hex digits).', 'bloclabs-ssi-login' ) ),
 			'event_mode'           => array( __( 'Event delivery', 'bloclabs-ssi-login' ), 'mode', 'firefly' ),
 			'webhook_secret'       => array( __( 'Webhook secret', 'bloclabs-ssi-login' ), 'secret', 'firefly', __( 'At least 32 characters. Prefer BLOCLABS_SSI_WEBHOOK_SECRET in wp-config.php.', 'bloclabs-ssi-login' ) ),
 			'webhook_allowed_ips'  => array( __( 'Webhook source IPs', 'bloclabs-ssi-login' ), 'text', 'firefly', __( 'Optional. IPs or CIDR ranges, comma separated.', 'bloclabs-ssi-login' ) ),

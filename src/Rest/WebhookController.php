@@ -71,7 +71,7 @@ final class WebhookController {
 	public function handle( \WP_REST_Request $request ) {
 		$body = $request->get_json_params();
 		if ( ! is_array( $body ) ) {
-			return new \WP_REST_Response( null, 204 );
+			return new \WP_REST_Response( array( 'received' => true ), 200 );
 		}
 
 		// A single event, or a batch (subscription option `batch: true`).
@@ -87,6 +87,6 @@ final class WebhookController {
 			return new \WP_Error( 'bloclabs_ssi_firefly', 'FireFly unavailable; retry.', array( 'status' => 503 ) );
 		}
 
-		return new \WP_REST_Response( null, 204 );
+		return new \WP_REST_Response( array( 'received' => true ), 200 );
 	}
 }

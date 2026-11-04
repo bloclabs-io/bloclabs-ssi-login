@@ -119,6 +119,9 @@ if ( ! function_exists( 'wp_remote_request' ) ) {
 			'url'  => $url,
 			'args' => $args,
 		);
+		if ( isset( $GLOBALS['bloclabs_ssi_test_remote_callback'] ) ) {
+			return ( $GLOBALS['bloclabs_ssi_test_remote_callback'] )( $url, $args );
+		}
 		return $GLOBALS['bloclabs_ssi_test_remote_response'] ?? array(
 			'response' => array( 'code' => 200 ),
 			'body'     => '{}',

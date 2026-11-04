@@ -22,7 +22,10 @@ final class RealFireFlyEventTest extends TestCase {
 	public function test_decodes_a_captured_login_attested_event(): void {
 		$fixture = json_decode( (string) file_get_contents( dirname( __DIR__ ) . '/fixtures/firefly-login-attested.json' ), true ); // phpcs:ignore WordPress.WP.AlternativeFunctions.file_get_contents_file_get_contents -- local fixture.
 
-		$GLOBALS['bloclabs_ssi_test_options'][ Settings::OPTION ] = array( 'firefly_listener_id' => $fixture['listener'] );
+		$GLOBALS['bloclabs_ssi_test_options'][ Settings::OPTION ] = array(
+			'firefly_listener_id' => $fixture['listener'],
+			'attestor_address'    => $fixture['address'],
+		);
 
 		$a = ( new ContractEventDecoder( new Settings() ) )->decode( $fixture['delivery'] );
 

@@ -2,6 +2,8 @@
 
 ## 0.1.0-dev (unreleased)
 
+- FireFly event safeguards (#31): require the emitting attestor address, serialize polling with shared cooldowns, order by protocol ID with a clock-skew margin, reject repeated contract decisions, upsert subscriptions on rotation and return JSON webhook acknowledgements.
+
 - `wp bloclabs-ssi subscribe` takes the webhook address as `--webhook-url`. It used to declare `--url`, which WP-CLI
   keeps for itself as its global site-URL option, so the command never received it and subscribed FireFly to the
   site's public REST URL regardless (#39).
