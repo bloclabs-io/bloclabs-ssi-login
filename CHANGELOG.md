@@ -2,6 +2,7 @@
 
 ## 0.1.0-dev (unreleased)
 
+- README brought up to date (multisite requirements, the integration-test command, agent login marked as planned, the WordPress.org listing as a founder decision). Docs only, no code change.
 - Reference verifier bridge in `bridge/` (TypeScript on Node 22, no runtime dependencies, ADR 0005): the two routes
   of docs/BRIDGE-API.md behind a bearer token; OpenID4VP 1.0 delegated to walt.id verifier-api2 (1.2.0) through its
   session API and webhooks; subject and presentation commitments; `attest()` through FireFly with an idempotency
