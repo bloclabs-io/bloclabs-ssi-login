@@ -75,6 +75,7 @@ The full flow, with every FireFly call, is in [docs/FIREFLY-FLOW.md](docs/FIREFL
 composer install
 composer test    # PHPUnit
 composer test:integration   # WordPress integration suite (PHPUnit 9, needs MySQL)
+WP_MULTISITE=1 composer test:integration   # the same suite on a multisite network
 composer phpcs   # WordPress coding standards
 npm install && npm run vendor   # optional: copies the QR encoder into assets/vendor/
 cd bridge && npm ci && npm test  # the verifier bridge (Node 22): build and tests

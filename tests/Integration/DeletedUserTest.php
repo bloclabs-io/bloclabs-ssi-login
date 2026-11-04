@@ -23,6 +23,10 @@ final class DeletedUserTest extends IntegrationTestCase {
 		wp_delete_user( $user_id );
 
 		$this->assertNull( Plugin::instance()->identities()->user_id_for( $hash ) );
-		$this->assertFalse( get_userdata( $user_id ) );
+		if ( is_multisite() ) {
+			$this->assertFalse( is_user_member_of_blog( $user_id ), 'on multisite wp_delete_user() only removes the user from the site' );
+		} else {
+			$this->assertFalse( get_userdata( $user_id ) );
+		}
 	}
 }

@@ -4,6 +4,11 @@
 
 - Correct finality, webhook delivery, contract build and claim-retention documentation; add regression coverage for atomic state transitions, login ordering, cookie attributes and version-aware WordPress test installs (#33).
 
+- Behind Apache `mod_remoteip` (on in the official WordPress Docker image) or nginx `real_ip`, `client_ip_header` must
+  stay empty: the server resolves the client and trims the header, so the plugin would read whatever the visitor wrote
+  and the per-client cap could be rotated out of. Documented in readme.txt, the field's help and SECURITY-MODEL
+  threat 11; the settings page now warns when the configured header is missing from the administrator's own
+  request (#45).
 - `wp bloclabs-ssi subscribe` takes the webhook address as `--webhook-url`. It used to declare `--url`, which WP-CLI
   keeps for itself as its global site-URL option, so the command never received it and subscribed FireFly to the
   site's public REST URL regardless (#39).
@@ -44,3 +49,12 @@
   default 500 per 10 minutes) backs the per-client one, both caps are on the settings page, and they are checked
   again by the row's rank after the insert, so a parallel burst cannot overshoot. Schema version 3 adds an index
   on `created_at` for the site-wide count.
+- Fixes from the Fable review (#29): the auth cookie is set by `is_ssl()`, as a password login does, so behind a TLS
+  proxy that hides HTTPS from PHP a credential login no longer ends on `reauth=1`; a `bloclabs_ssi_resolve_user`
+  refusal removes the account provisioned for it; a refused provisioned account is deleted network-wide on
+  multisite unless another site holds it by then, a subject whose deterministic login is held by a stranded network
+  account (or by its account on another site under a shared subject key) is given that account, and a network's
+  refusal to add that account to the site (`can_add_user_to_blog`) refuses the login; a concurrent provision of the
+  same subject answers "retry" instead of "not linked"; `identities.issuer` is a TEXT column (schema version 4), so
+  long `did:jwk` and `did:ion` issuers no longer refuse every login; and the settings form no longer unslashes
+  twice, so backslashes typed into secrets survive.

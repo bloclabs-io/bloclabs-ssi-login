@@ -1,6 +1,6 @@
 <?php
 /**
- * Regression tests for the settings page: capability (#27), numeric bounds (#26).
+ * Regression tests for the settings page: capability (#27), numeric bounds (#26), the client IP header warning (#45).
  *
  * @package BlocLabs\SsiLogin
  */
@@ -112,5 +112,51 @@ final class SettingsPageTest extends TestCase {
 		$this->assertSame( 2000, $kept['max_pending_total'] );
 		$this->assertSame( 2, $kept['client_ip_proxies'] );
 		$this->assertSame( 'HTTP_X_FORWARDED_FOR', $kept['client_ip_header'] );
+	}
+
+	/**
+	 * Apache mod_remoteip (on in the official WordPress Docker image) resolves
+	 * the client and removes the header before PHP runs, so an administrator's
+	 * own request arrives without it: the page must say so.
+	 */
+	public function test_warns_when_the_configured_header_is_missing_from_the_request(): void {
+		$page = $this->page( array( 'client_ip_header' => 'HTTP_X_FORWARDED_FOR' ) );
+
+		$warning = $page->client_ip_header_warning( array( 'REMOTE_ADDR' => '198.51.100.7' ) );
+
+		$this->assertIsString( $warning );
+		$this->assertStringContainsString( 'HTTP_X_FORWARDED_FOR', $warning );
+		$this->assertStringContainsString( 'mod_remoteip', $warning );
+	}
+
+	/**
+	 * A proxy that sets the header on every request, even one with public
+	 * addresses such as Cloudflare, is the configuration the setting is for.
+	 */
+	public function test_no_warning_when_the_header_arrives(): void {
+		$page = $this->page( array( 'client_ip_header' => 'HTTP_CF_CONNECTING_IP' ) );
+
+		$this->assertNull(
+			$page->client_ip_header_warning(
+				array(
+					'REMOTE_ADDR'           => '198.51.100.7',
+					'HTTP_CF_CONNECTING_IP' => '203.0.113.50',
+				)
+			)
+		);
+	}
+
+	public function test_no_warning_without_a_configured_header(): void {
+		$page = $this->page( array( 'client_ip_header' => '' ) );
+
+		$this->assertNull( $page->client_ip_header_warning( array( 'REMOTE_ADDR' => '198.51.100.7' ) ) );
+	}
+
+	/**
+	 * @param array<string, mixed> $values
+	 */
+	private function page( array $values ): SettingsPage {
+		$GLOBALS['bloclabs_ssi_test_options'][ Settings::OPTION ] = $values;
+		return new SettingsPage( new Settings() );
 	}
 }

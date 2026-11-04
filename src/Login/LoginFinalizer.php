@@ -45,7 +45,7 @@ final class LoginFinalizer {
 	) {}
 
 	/**
-	 * @return \WP_User|\WP_Error
+	 * @return \WP_User|\WP_Error A WP_Error with code RETRY leaves the attempt verified.
 	 */
 	public function finalize( Attempt $attempt ) {
 		if ( AttemptStatus::Verified !== $attempt->status || $attempt->is_expired() ) {
@@ -76,6 +76,10 @@ final class LoginFinalizer {
 		}
 
 		$user = $this->users->resolve( $result );
+		if ( is_wp_error( $user ) ) {
+			// Another request is still creating this subject's account: the browser retries.
+			return $user;
+		}
 		if ( null === $user ) {
 			$this->attempts->transition( $attempt, AttemptStatus::Failed );
 			return new \WP_Error(
@@ -87,7 +91,7 @@ final class LoginFinalizer {
 
 		$refusal = $this->check_user( $user, $result );
 		if ( null !== $refusal ) {
-			$this->users->undo_provision( $user );
+			$this->users->undo_provision( $user->ID );
 			$this->attempts->transition( $attempt, AttemptStatus::Failed );
 			return $refusal;
 		}
@@ -97,7 +101,9 @@ final class LoginFinalizer {
 		}
 
 		wp_set_current_user( $user->ID );
-		wp_set_auth_cookie( $user->ID, false, $this->settings->site_is_https() );
+		// Core reads the cookie it picks by is_ssl(), so the cookie must be set by is_ssl() too, as wp_signon()
+		// does: behind a TLS proxy that hides HTTPS from PHP, a cookie set by the home URL's scheme is never read.
+		wp_set_auth_cookie( $user->ID, false, is_ssl() );
 		$this->binding->clear();
 
 		/** This action is documented in wp-includes/user.php */
