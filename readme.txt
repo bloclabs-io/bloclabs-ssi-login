@@ -23,6 +23,8 @@ Visitors log in by presenting a credential from their identity wallet. A verifie
 3. Configure Settings → SSI Login (on multisite, as a network administrator), and put secrets in wp-config.php as BLOCLABS_SSI_* constants.
 4. Run `wp bloclabs-ssi subscribe` to create the FireFly webhook subscription (add `--webhook-url=<internal address>` when FireFly reaches WordPress over a private network).
 
+Behind a proxy, set the client IP header in Settings → SSI Login only when the site is reachable through that proxy alone, and leave it empty when the web server already resolves the client address (Apache mod_remoteip, which the official WordPress Docker image turns on, or nginx real_ip): the header PHP sees has been trimmed, and the login rate limit would count whatever a visitor writes in it. The settings page warns when the configured header is missing from your own request.
+
 == Changelog ==
 
 = 0.1.0 =
