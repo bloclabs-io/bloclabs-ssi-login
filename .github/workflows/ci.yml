@@ -84,6 +84,7 @@ jobs:
           coverage: none
           tools: composer:v2
       - run: composer install --no-interaction --no-progress
+      - run: bash tests/Shell/install-wordpress.sh
       - run: composer test:integration
 
   bridge:

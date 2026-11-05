@@ -15,6 +15,7 @@ declare(strict_types=1);
 $bloclabs_ssi_root = dirname( __DIR__, 2 );
 
 require $bloclabs_ssi_root . '/vendor/autoload.php';
+require __DIR__ . '/Support/CookieCapture.php';
 
 // Composer resolves a package classmap through vendor/composer/../, so the
 // marker is the phpunit package directory rather than vendor/phpunit.

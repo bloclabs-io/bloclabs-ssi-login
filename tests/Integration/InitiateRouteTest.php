@@ -44,8 +44,9 @@ final class InitiateRouteTest extends IntegrationTestCase {
 	}
 
 	public function test_issues_a_binding_cookie(): void {
-		$opened = $this->open_attempt();
-		$secret = $this->binding_cookie();
+		$GLOBALS['bloclabs_ssi_test_cookies'] = array();
+		$opened                               = $this->open_attempt();
+		$secret                               = $this->binding_cookie();
 
 		$this->assertNotSame( '', $secret );
 		$this->assertSame( (string) $opened['row']['correlation_id'], VerifierFake::instance()->last_request?->correlation_id );
@@ -53,11 +54,16 @@ final class InitiateRouteTest extends IntegrationTestCase {
 		$this->assertSame( (string) $opened['row']['blinding_secret'], VerifierFake::instance()->last_request?->blinding_secret, 'the bridge gets the secret that blinds the commitment' );
 		$this->assertArrayNotHasKey( 'blinding_secret', $opened['data'], 'the browser never sees it' );
 
-		$headers = implode( "\n", headers_list() );
-		if ( str_contains( $headers, 'bloclabs_ssi=' ) ) {
-			$this->assertMatchesRegularExpression( '/bloclabs_ssi=[^;]+;[^\\n]*HttpOnly/i', $headers );
-			$this->assertMatchesRegularExpression( '/bloclabs_ssi=[^;]+;[^\\n]*SameSite=Strict/i', $headers );
-		}
+		$this->assertCount( 1, $GLOBALS['bloclabs_ssi_test_cookies'] );
+		list( $name, $value, $options ) = $GLOBALS['bloclabs_ssi_test_cookies'][0];
+		$this->assertSame( Plugin::instance()->binding()->cookie_name(), $name );
+		$this->assertSame( $secret, $value );
+		$this->assertTrue( $options['httponly'] );
+		$this->assertSame( 'Strict', $options['samesite'] );
+		$this->assertSame( '/', $options['path'] );
+		$this->assertArrayNotHasKey( 'domain', $options );
+		$this->assertSame( Plugin::instance()->settings()->site_is_https(), $options['secure'] );
+		$this->assertGreaterThan( time(), $options['expires'] );
 
 		$public_id = (string) $opened['data']['attempt'];
 		$owned     = $this->dispatch( 'GET', '/status/' . $public_id );
@@ -81,6 +87,21 @@ final class InitiateRouteTest extends IntegrationTestCase {
 
 		// The refused reads did not move the attempt.
 		$this->assertSame( 'pending', $this->attempt_row( $public_id )['status'] );
+	}
+
+	public function test_https_cookie_is_secure_and_host_only_even_behind_tls_termination(): void {
+		update_option( 'home', 'https://login.example' );
+		$GLOBALS['bloclabs_ssi_test_cookies'] = array();
+		$this->open_attempt();
+		$this->assertCount( 1, $GLOBALS['bloclabs_ssi_test_cookies'] );
+		list( $name, $value, $options ) = $GLOBALS['bloclabs_ssi_test_cookies'][0];
+		$this->assertSame( '__Host-bloclabs_ssi', $name );
+		$this->assertNotSame( '', $value );
+		$this->assertTrue( $options['secure'] );
+		$this->assertTrue( $options['httponly'] );
+		$this->assertSame( 'Strict', $options['samesite'] );
+		$this->assertSame( '/', $options['path'] );
+		$this->assertArrayNotHasKey( 'domain', $options );
 	}
 
 	public function test_per_ip_limit_counts_every_attempt(): void {
