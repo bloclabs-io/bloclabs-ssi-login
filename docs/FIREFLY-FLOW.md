@@ -56,7 +56,7 @@ Done once per environment by an operator (FireFly's own tooling, or `firefly-mcp
    `{"name": "ssi-login-attestor", "interface": {"id": "<interface id>"}, "location": {"address": "<contract>"}}`
 4. **Create the listener.** `POST /apis/ssi-login-attestor/listeners/LoginAttested`
    `{"topic": "ssi-login", "options": {"firstEvent": "newest"}}`. FireFly requires the `topic`. Put the returned
-   `id` in the plugin setting `firefly_listener_id`.
+   `id` in the plugin setting `firefly_listener_id`, and the emitting contract address in `attestor_address` (or `BLOCLABS_SSI_ATTESTOR_ADDRESS`). The decoder refuses events until both are configured.
 5. **Subscribe WordPress.** `wp bloclabs-ssi subscribe [--webhook-url=<internal url>]` creates:
    ```json
    {
@@ -121,7 +121,7 @@ Note that FireFly renders `uint8` as a string (`"1"`). A captured event is in
 the list endpoint takes `fetchreferences`). A 404 means the delivery named an event FireFly does not have: ignored.
 
 **WordPress → FireFly: poll (fallback).**
-`GET /blockchainevents?listener=<id>&name=LoginAttested&timestamp=>=<attempt start - 5s>&sort=-timestamp&limit=50&skip=<n>`,
+`GET /blockchainevents?listener=<id>&name=LoginAttested&timestamp=>=<attempt start - 3600s>&sort=-protocolid&limit=50&skip=<n>`,
 page after page until a short page (at most 20 pages). FireFly filters take an operator prefix on the value (`>=`);
 `-` before a sort field means descending. FireFly cannot filter on decoded output, so each page is decoded and
 matched by `correlationId` in WordPress.
@@ -147,3 +147,22 @@ matched by `correlationId` in WordPress.
 | **Wallet tap → logged in** | **~4–6 s** |
 
 On chains without instant finality, raise `confirmations.required` in evmconnect and expect a longer wait.
+
+### Event-path safeguards (#31)
+
+Deploy the revised attestor for new environments: it rejects a second attestation for a correlation ID,
+so webhook and polling delivery cannot settle contradictory decisions. Existing deployments need a planned
+contract migration; this plugin update alone cannot add that invariant to an old contract.
+
+Polling uses unique protocol IDs to order same-block logs, a one-hour clock-skew margin, at most 20 pages
+of 50 rows and an eight-second scan budget (a final HTTP call can add up to five seconds). Keep chain and
+WordPress clocks synchronized; larger skew and windows exceeding the scan bounds are not supported.
+A MySQL connection-scoped advisory lock serializes scans across browsers. A 30-second failure cooldown
+prevents a slow or unavailable FireFly from occupying the PHP worker pool; successful scans cool down
+for three seconds. The database user must be able to call GET_LOCK and RELEASE_LOCK.
+
+`wp bloclabs-ssi subscribe` now upserts by name with PUT `/subscriptions`. Run it again after changing
+the URL or rotating the webhook secret. `wp bloclabs-ssi status --webhook-url=<expected internal URL>`
+checks the subscription URL and secret without displaying the secret, and warns for unbound or mismatched
+listeners. Successful webhook deliveries return HTTP 200 with `{"received":true}` so a JSON transport
+can parse the acknowledgement.

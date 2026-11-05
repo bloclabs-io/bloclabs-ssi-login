@@ -45,6 +45,7 @@ final class Settings {
 			'firefly_auth_header'  => '',
 			// The contract listener that watches the attestor contract's LoginAttested event.
 			'firefly_listener_id'  => '',
+			'attestor_address'     => '',
 			'attestation_event'    => 'LoginAttested',
 			'event_mode'           => self::EVENT_MODE_WEBHOOK,
 			'webhook_secret'       => '',

@@ -66,7 +66,8 @@ final class FireFlyHttpFake {
 		$this->urls[] = $url;
 
 		if ( str_contains( $url, '/blockchainevents' ) ) {
-			return $this->json( 200, $this->blockchain_events ?? array() );
+			parse_str( (string) wp_parse_url( $url, PHP_URL_QUERY ), $query );
+			return $this->json( $this->status, array_slice( $this->blockchain_events ?? array(), (int) ( $query['skip'] ?? 0 ), (int) ( $query['limit'] ?? 50 ) ) );
 		}
 
 		if ( str_contains( $url, '/events/' ) ) {
