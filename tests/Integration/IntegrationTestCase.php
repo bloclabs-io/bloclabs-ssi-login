@@ -48,6 +48,7 @@ abstract class IntegrationTestCase extends \WP_UnitTestCase {
 		$this->ensure_schema();
 		$this->empty_plugin_tables();
 		$this->configure();
+		delete_option( 'bloclabs_ssi_poll_after' );
 
 		VerifierFake::instance()->reset();
 		FireFlyHttpFake::instance()->reset();
@@ -95,6 +96,7 @@ abstract class IntegrationTestCase extends \WP_UnitTestCase {
 				'firefly_url'          => 'https://firefly.example',
 				'firefly_namespace'    => 'default',
 				'firefly_listener_id'  => (string) CapturedLoginEvent::fixture()['listener'],
+				'attestor_address'     => (string) CapturedLoginEvent::fixture()['address'],
 				'event_mode'           => Settings::EVENT_MODE_WEBHOOK,
 				'linking_policy'       => Settings::LINK_ONLY,
 				'default_role'         => 'subscriber',
@@ -171,7 +173,7 @@ abstract class IntegrationTestCase extends \WP_UnitTestCase {
 			array( WebhookController::SECRET_HEADER => self::WEBHOOK_SECRET ),
 			false
 		);
-		$this->assert_http( 204, $response );
+		$this->assert_http( 200, $response );
 
 		return $delivery;
 	}

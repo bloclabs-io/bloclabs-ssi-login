@@ -48,7 +48,7 @@ final class FireFlyClient {
 				'name'      => $name,
 				// FireFly filter syntax: an operator prefix on the value.
 				'timestamp' => '>=' . gmdate( 'Y-m-d\TH:i:s\Z', $since ),
-				'sort'      => '-timestamp',
+				'sort'      => '-protocolid',
 				'limit'     => (string) $limit,
 				'skip'      => (string) $skip,
 			)
@@ -76,8 +76,9 @@ final class FireFlyClient {
 	 * @return array<string, mixed>
 	 */
 	public function create_webhook_subscription( string $name, string $url, string $listener_id, array $headers ): array {
-		return $this->post(
-			'subscriptions',
+		return $this->request(
+			'PUT',
+			$this->ns_url( 'subscriptions' ),
 			array(
 				'name'      => $name,
 				'transport' => 'webhooks',

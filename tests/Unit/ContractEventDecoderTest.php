@@ -17,7 +17,10 @@ final class ContractEventDecoderTest extends TestCase {
 	private const LISTENER = '6f4c2a1e-0d7b-4c55-9a51-3f2d1c0b9e88';
 
 	protected function setUp(): void {
-		$GLOBALS['bloclabs_ssi_test_options'][ Settings::OPTION ] = array( 'firefly_listener_id' => self::LISTENER );
+		$GLOBALS['bloclabs_ssi_test_options'][ Settings::OPTION ] = array(
+			'firefly_listener_id' => self::LISTENER,
+			'attestor_address'    => '0x' . str_repeat( '12', 20 ),
+		);
 	}
 
 	/**
@@ -42,7 +45,10 @@ final class ContractEventDecoderTest extends TestCase {
 					'presentationHash'  => '0x' . str_repeat( 'EF', 32 ),
 					'verifier'          => '0x598cf3c9e9ab6fd77b342f91cb239c258a394e0c',
 				),
-				'info'     => array( 'transactionHash' => '0x12a928b0a82cc3f34fbec922a835fb81e494af8b497445b187c5b678ecb2dc4f' ),
+				'info'     => array(
+					'address'         => '0x' . str_repeat( '12', 20 ),
+					'transactionHash' => '0x12a928b0a82cc3f34fbec922a835fb81e494af8b497445b187c5b678ecb2dc4f',
+				),
 			),
 		);
 		return array_replace_recursive( $event, $overrides );
@@ -73,7 +79,10 @@ final class ContractEventDecoderTest extends TestCase {
 	}
 
 	public function test_listener_id_case_does_not_matter(): void {
-		$GLOBALS['bloclabs_ssi_test_options'][ Settings::OPTION ] = array( 'firefly_listener_id' => strtoupper( self::LISTENER ) );
+		$GLOBALS['bloclabs_ssi_test_options'][ Settings::OPTION ] = array(
+			'firefly_listener_id' => strtoupper( self::LISTENER ),
+			'attestor_address'    => '0x' . str_repeat( '12', 20 ),
+		);
 		$this->assertNotNull( $this->decoder()->decode( self::delivery() ) );
 	}
 
@@ -99,6 +108,14 @@ final class ContractEventDecoderTest extends TestCase {
 	public function test_an_unreadable_result_counts_as_rejected(): void {
 		$a = $this->decoder()->decode( self::delivery( array(), array( 'result' => 'yes' ) ) );
 		$this->assertFalse( $a?->is_verified() );
+	}
+
+	public function test_rejects_another_emitter_and_missing_address(): void {
+		foreach ( array( '', '0x' . str_repeat( '34', 20 ) ) as $address ) {
+			$this->assertNull( $this->decoder()->decode( self::delivery( array( 'blockchainEvent' => array( 'info' => array( 'address' => $address ) ) ) ) ) );
+		}
+		$GLOBALS['bloclabs_ssi_test_options'][ Settings::OPTION ]['attestor_address'] = '';
+		$this->assertNull( $this->decoder()->decode( self::delivery() ) );
 	}
 
 	public function test_hex32(): void {

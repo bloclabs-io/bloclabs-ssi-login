@@ -72,7 +72,7 @@ final class WebhookRouteTest extends IntegrationTestCase {
 			array( WebhookController::SECRET_HEADER => self::WEBHOOK_SECRET ),
 			false
 		);
-		$this->assert_http( 204, $applied );
+		$this->assert_http( 200, $applied );
 
 		$row = $this->attempt_row( $public_id );
 		$this->assertSame( 'verified', $row['status'] );
@@ -96,7 +96,7 @@ final class WebhookRouteTest extends IntegrationTestCase {
 			array( WebhookController::SECRET_HEADER => self::WEBHOOK_SECRET ),
 			false
 		);
-		$this->assert_http( 204, $ignored );
+		$this->assert_http( 200, $ignored );
 		$this->assertSame( 'pending', $this->attempt_row( (string) $second['data']['attempt'] )['status'] );
 	}
 

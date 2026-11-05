@@ -1,0 +1,111 @@
+# Handoff between Fable (develops, reviews, fixes) and Britney (tests on P0, merges, deploys).
+# Protocol: docs/HANDOFF.md. One stage label per open PR:
+#   needs-review -> needs-fix | ready-for-test -> tested
+# - Opening a PR, or pushing to it, sets needs-review (new commits void earlier reviews and tests).
+# - A review or comment with a line "Handoff: review|fix|test|merge" moves it. Only Britney can hand
+#   over to merge, and only from ready-for-test.
+# - Drafts carry no stage label. Closing the PR removes the stage label.
+# Comments without "Handoff:" skip the job before a runner starts, so they cost no Actions minutes.
+name: Handoff
+
+on:
+  pull_request:
+    types: [opened, reopened, ready_for_review, converted_to_draft, synchronize, closed]
+  issue_comment:
+    types: [created]
+  pull_request_review:
+    types: [submitted]
+
+permissions:
+  issues: write
+  pull-requests: write
+
+jobs:
+  stage:
+    if: >-
+      github.event_name == 'pull_request' ||
+      (github.event_name == 'issue_comment' && github.event.issue.pull_request && contains(github.event.comment.body, 'Handoff:')) ||
+      (github.event_name == 'pull_request_review' && contains(github.event.review.body, 'Handoff:'))
+    # Job-level on purpose: a run that the `if` skips must not take the group's pending slot from a real handoff.
+    concurrency:
+      group: handoff-${{ github.event.pull_request.number || github.event.issue.number }}
+      cancel-in-progress: false
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    steps:
+      - uses: actions/github-script@ed597411d8f924073f98dfc5c65a23a2325f34cd # v8.0.0
+        with:
+          script: |
+            const LABELS = {
+              'needs-review': { color: 'fbca04', description: 'Waiting for the Codex review' },
+              'needs-fix': { color: 'd93f0b', description: 'Review or test found something: the coder fixes' },
+              'ready-for-test': { color: '1d76db', description: 'Review is clean: Britney tests on P0' },
+              'tested': { color: '0e8a16', description: 'Tested on P0: Britney merges' },
+            };
+            const STAGE = { review: 'needs-review', fix: 'needs-fix', test: 'ready-for-test', merge: 'tested' };
+            // Fable and the founder use bloclabs-io; Codex and Grok post as their respective bots.
+            const ACTORS = ['bloclabs-io', 'bloclabs-britney', 'chatgpt-codex-connector[bot]', 'cursor[bot]'];
+            const { owner, repo } = context.repo;
+            const event = context.eventName;
+            let pr, actor = null, stage = null;
+
+            if (event === 'pull_request') {
+              pr = context.payload.pull_request;
+              if (!pr.head.repo || pr.head.repo.full_name !== context.payload.repository.full_name) {
+                return core.info('PR from a fork: the token is read-only there, so no stage label.');
+              }
+              // closed and draft PRs carry no stage label; anything else is a new head to review
+              if (context.payload.action !== 'closed' && !pr.draft) stage = 'review';
+            } else {
+              const note = event === 'issue_comment' ? context.payload.comment : context.payload.review;
+              pr = event === 'issue_comment' ? context.payload.issue : context.payload.pull_request;
+              if (pr.state !== 'open') return core.info(`#${pr.number} is ${pr.state}: nothing to move.`);
+              if (pr.draft) return core.info('Draft PR: no stage label until it is ready for review.');
+              actor = note.user.login;
+              if (!ACTORS.includes(actor)) return core.info(`Ignored: ${actor} is not part of the handoff.`);
+              // Only a whole line counts, outside fenced code blocks (a quoted "> Handoff:" never matches). The last one wins.
+              const prose = (note.body || '').replace(/^[ \t]*(`{3,}|~{3,})[\s\S]*?(?:^[ \t]*\1[ \t]*$|(?![\s\S]))/gm, '');
+              const lines = [...prose.matchAll(/^[ \t]*Handoff:[ \t]*(review|fix|test|merge)[ \t]*\r?$/gim)];
+              if (!lines.length) return core.info('No Handoff line of its own (review, fix, test or merge).');
+              stage = lines[lines.length - 1][1].toLowerCase();
+            }
+
+            // The labels exist and look the same in every repository.
+            for (const [name, want] of Object.entries(LABELS)) {
+              try {
+                const { data: have } = await github.rest.issues.getLabel({ owner, repo, name });
+                if (have.color.toLowerCase() !== want.color || (have.description || '') !== want.description) {
+                  await github.rest.issues.updateLabel({ owner, repo, name, ...want });
+                }
+              } catch (e) {
+                if (e.status !== 404) throw e;
+                await github.rest.issues.createLabel({ owner, repo, name, ...want });
+              }
+            }
+
+            // Read the labels live: the event payload is a snapshot from before earlier runs changed them.
+            const { data: live } = await github.rest.issues.listLabelsOnIssue({ owner, repo, issue_number: pr.number });
+            const current = live.map(l => l.name).filter(n => n in LABELS);
+
+            if (stage === 'merge') {
+              if (actor !== 'bloclabs-britney') {
+                return core.setFailed(`Only Britney hands a PR over to merge, after testing on P0 (${actor} tried).`);
+              }
+              if (!current.includes('ready-for-test')) {
+                return core.setFailed(`A merge handoff needs a clean review first: the PR is at ${current.join(', ') || 'no stage'}, not ready-for-test.`);
+              }
+            }
+
+            const target = stage ? STAGE[stage] : null;
+            for (const name of Object.keys(LABELS)) {
+              if (name === target) continue;
+              try {
+                await github.rest.issues.removeLabel({ owner, repo, issue_number: pr.number, name });
+              } catch (e) {
+                if (e.status !== 404) throw e; // not on the PR: fine
+              }
+            }
+            if (target) {
+              await github.rest.issues.addLabels({ owner, repo, issue_number: pr.number, labels: [target] });
+            }
+            core.info(`#${pr.number}: ${current.join(', ') || 'no stage'} -> ${target || 'no stage label'}`);

@@ -3,7 +3,7 @@ pragma solidity ^0.8.24;
 
 /// @title SsiLoginAttestor
 /// @notice An append-only record of login decisions made by authorised verifiers.
-/// @dev Holds no state per login: the event log is the record. FireFly listens for
+/// @dev Records whether each correlation has been attested once. FireFly listens for
 ///      LoginAttested and streams it to WordPress. Only commitments go on chain,
 ///      never claims, DIDs or anything personal:
 ///        correlationId     random per attempt, known to WordPress and the verifier
@@ -17,6 +17,7 @@ contract SsiLoginAttestor {
     address public owner;
     address public pendingOwner;
     mapping(address => bool) public isVerifier;
+    mapping(bytes32 => bool) public attested;
 
     event LoginAttested(
         bytes32 indexed correlationId,
@@ -33,6 +34,7 @@ contract SsiLoginAttestor {
     error NotOwner();
     error NotVerifier();
     error BadResult();
+    error AlreadyAttested();
     error ZeroAddress();
 
     modifier onlyOwner() {
@@ -58,6 +60,8 @@ contract SsiLoginAttestor {
     ) external {
         if (!isVerifier[msg.sender]) revert NotVerifier();
         if (result != RESULT_VERIFIED && result != RESULT_REJECTED) revert BadResult();
+        if (attested[correlationId]) revert AlreadyAttested();
+        attested[correlationId] = true;
         emit LoginAttested(correlationId, result, subjectCommitment, presentationHash, msg.sender);
     }
 

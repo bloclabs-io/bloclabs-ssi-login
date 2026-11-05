@@ -15,13 +15,14 @@ declare(strict_types=1);
 namespace BlocLabs\SsiLogin\FireFly;
 
 use BlocLabs\SsiLogin\Config\Settings;
+use BlocLabs\SsiLogin\Database\Schema;
 use BlocLabs\SsiLogin\Session\Attempt;
 use BlocLabs\SsiLogin\Session\AttemptRepository;
 use BlocLabs\SsiLogin\Session\AttemptStatus;
 
 final class EventReconciler {
 
-	private const CHECK_INTERVAL = 3;
+	private const CHECK_INTERVAL = 15;
 	private const PAGE_SIZE      = 50;
 	// 20 pages: 1,000 attestations within one attempt's lifetime is far beyond a single site's login rate.
 	private const MAX_PAGES = 20;
@@ -53,6 +54,25 @@ final class EventReconciler {
 			return 0;
 		}
 
+		global $wpdb;
+		// Connection-scoped lock: no lease can expire while a slow HTTP scan is still running.
+		$lock = 'ssi_poll_' . md5( Schema::attempts_table() );
+		if ( '1' !== (string) $wpdb->get_var( $wpdb->prepare( 'SELECT GET_LOCK(%s, 0)', $lock ) ) ) { // phpcs:ignore WordPress.DB.DirectDatabaseQuery
+			return 0;
+		}
+		try {
+			if ( (int) get_option( 'bloclabs_ssi_poll_after', 0 ) > time() ) {
+				return 0;
+			}
+			return $this->scan( $attempt );
+		} finally {
+			$wpdb->get_var( $wpdb->prepare( 'SELECT RELEASE_LOCK(%s)', $lock ) ); // phpcs:ignore WordPress.DB.DirectDatabaseQuery
+		}
+	}
+
+	private function scan( Attempt $attempt ): int {
+		// Shared cooldown, also acting as a circuit breaker on transport failures.
+		update_option( 'bloclabs_ssi_poll_after', time() + 30, false );
 		$applied = 0;
 		$started = microtime( true );
 		for ( $page = 0; $page < self::MAX_PAGES; $page++ ) {
@@ -64,7 +84,7 @@ final class EventReconciler {
 				$events = $this->firefly->blockchain_events(
 					$this->settings->string( 'firefly_listener_id' ),
 					$this->settings->string( 'attestation_event' ),
-					$attempt->created_at - 5,
+					$attempt->created_at - 3600,
 					self::PAGE_SIZE,
 					$page * self::PAGE_SIZE
 				);
@@ -97,6 +117,7 @@ final class EventReconciler {
 				break;
 			}
 		}
+		update_option( 'bloclabs_ssi_poll_after', time() + 3, false );
 		return $applied;
 	}
 }
