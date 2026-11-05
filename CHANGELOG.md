@@ -2,6 +2,8 @@
 
 ## 0.1.0-dev (unreleased)
 
+- FireFly event safeguards (#31): require the emitting attestor address, serialize polling with shared cooldowns, order by protocol ID with a clock-skew margin, reject repeated contract decisions, upsert subscriptions on rotation and return JSON webhook acknowledgements.
+
 - Behind Apache `mod_remoteip` (on in the official WordPress Docker image) or nginx `real_ip`, `client_ip_header` must
   stay empty: the server resolves the client and trims the header, so the plugin would read whatever the visitor wrote
   and the per-client cap could be rotated out of. Documented in readme.txt, the field's help and SECURITY-MODEL

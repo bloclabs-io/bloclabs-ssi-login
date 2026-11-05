@@ -36,9 +36,15 @@ final class ContractEventDecoder implements EventDecoder {
 			return null;
 		}
 
-		// Only the configured listener is trusted: it is bound to the attestor contract's address.
+		// Check both the listener and the actual emitting contract, even for an unbound listener.
 		$listener = strtolower( $this->settings->string( 'firefly_listener_id' ) );
 		if ( '' === $listener || strtolower( (string) ( $chain_event['listener'] ?? '' ) ) !== $listener ) {
+			return null;
+		}
+
+		$address = strtolower( $this->settings->string( 'attestor_address' ) );
+		$emitter = strtolower( (string) ( $chain_event['info']['address'] ?? '' ) );
+		if ( 1 !== preg_match( '/^0x[0-9a-f]{40}$/', $address ) || $address !== $emitter ) {
 			return null;
 		}
 
