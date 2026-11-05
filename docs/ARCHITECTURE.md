@@ -104,7 +104,7 @@ Under `auto_provision`, the sanitized `name` claim becomes the new WordPress acc
 3. **WordPress → FireFly, WordPress → bridge.** Private network. FireFly core has no authentication of its own, so it
    must never be exposed publicly. An authenticating proxy is supported through an `Authorization` header setting.
 4. **Bridge → chain.** Only addresses the contract owner authorised can emit `LoginAttested`. The contract listener
-   is bound to the contract address, and the decoder accepts only the configured listener.
+   is bound to the contract address, and the decoder independently checks the configured listener and `attestor_address` against the log emitter.
 5. **Bridge's HTTP answer vs. its on-chain record.** At completion WordPress recomputes
    `sha256(correlation_id ":" blinding_secret ":" subject_id)` and compares the presentation hash. This binds the subject and presentation hash only. WordPress does not recompute that hash from the HTTP claims: the issuer and disclosed claims passed to hooks are unattested HTTP data. Extensions must trust the authenticated bridge for those fields, and must not treat them as separately proven on chain.
 
@@ -140,7 +140,7 @@ and the webhook IP allowlist is that network's range. Only WordPress and the bri
 public.
 
 **B. WordPress hosted elsewhere.** FireFly cannot reach WordPress. Set event delivery to *Polling only*: the status
-endpoint asks FireFly for recent `LoginAttested` events, at most once every 3 seconds per attempt. WordPress still
+endpoint asks FireFly for recent `LoginAttested` events, through one shared scan at a time, with a 3-second cooldown and a 30-second cooldown after transport failures. Each attempt is checked at most once every 15 seconds. WordPress still
 needs to reach FireFly, through a VPN or an authenticating proxy.
 
 **C. Long-lived listener.** A WP-CLI process holding a FireFly WebSocket was considered and deferred

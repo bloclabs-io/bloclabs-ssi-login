@@ -29,6 +29,14 @@ final class Command {
 	/**
 	 * Checks FireFly reachability, the listener setting and the webhook subscriptions.
 	 *
+	 * ## OPTIONS
+	 *
+	 * [--webhook-url=<url>]
+	 * : Expected delivery URL when using an internal address.
+	 *
+	 * [--name=<name>]
+	 * : Expected subscription name (default bloclabs-ssi-login).
+	 *
 	 * ## EXAMPLES
 	 *
 	 *     wp bloclabs-ssi status
@@ -46,11 +54,26 @@ final class Command {
 		try {
 			$status = $this->plugin->firefly()->status();
 			\WP_CLI::log( 'FireFly:        reachable, namespace ' . ( $status['namespace']['name'] ?? '?' ) );
-			$webhook = rest_url( 'bloclabs-ssi/v1/firefly/events' );
+			$webhook  = $assoc['webhook-url'] ?? rest_url( 'bloclabs-ssi/v1/firefly/events' );
+			$listener = $this->plugin->firefly()->get( 'contracts/listeners/' . rawurlencode( $settings->string( 'firefly_listener_id' ) ) );
+			if ( empty( $listener['location']['address'] ) ) {
+				\WP_CLI::warning( 'The contract listener has no address binding.' );
+			} elseif ( strtolower( (string) $listener['location']['address'] ) !== strtolower( $settings->string( 'attestor_address' ) ) ) {
+				\WP_CLI::warning( 'The listener address differs from attestor_address.' );
+			}
+			$found = false;
 			foreach ( $this->plugin->firefly()->subscriptions() as $sub ) {
-				if ( 'webhooks' === ( $sub['transport'] ?? '' ) ) {
+				if ( 'webhooks' === ( $sub['transport'] ?? '' ) && ( $assoc['name'] ?? 'bloclabs-ssi-login' ) === ( $sub['name'] ?? '' ) ) {
+					$found   = true;
+					$headers = array_change_key_case( (array) ( $sub['options']['headers'] ?? array() ), CASE_LOWER );
+					if ( ( $sub['options']['url'] ?? '' ) !== $webhook || ! hash_equals( $settings->string( 'webhook_secret' ), (string) ( $headers[ strtolower( WebhookController::SECRET_HEADER ) ] ?? '' ) ) ) {
+						\WP_CLI::warning( 'Subscription URL or secret differs; run subscribe to update it.' );
+					}
 					\WP_CLI::log( sprintf( 'Subscription:   %s → %s', $sub['name'] ?? '?', $sub['options']['url'] ?? '?' ) );
 				}
+			}
+			if ( ! $found ) {
+				\WP_CLI::warning( 'Webhook subscription is missing.' );
 			}
 			\WP_CLI::log( 'This site:      ' . $webhook );
 		} catch ( FireFlyException $e ) {
@@ -101,7 +124,7 @@ final class Command {
 			\WP_CLI::error( $e->getMessage() );
 		}
 
-		\WP_CLI::success( 'Subscription ' . ( $sub['id'] ?? '?' ) . ' created.' );
+		\WP_CLI::success( 'Subscription ' . ( $sub['id'] ?? '?' ) . ' saved.' );
 	}
 
 	/**

@@ -58,7 +58,7 @@ final class CliCommandTest extends TestCase {
 	}
 
 	protected function tearDown(): void {
-		unset( $GLOBALS['bloclabs_ssi_test_options'][ Settings::OPTION ], $GLOBALS['bloclabs_ssi_test_remote_response'] );
+		unset( $GLOBALS['bloclabs_ssi_test_remote_callback'], $GLOBALS['bloclabs_ssi_test_options'][ Settings::OPTION ], $GLOBALS['bloclabs_ssi_test_remote_response'] );
 	}
 
 	public function test_no_subcommand_declares_an_option_wp_cli_keeps_for_itself(): void {
@@ -85,7 +85,7 @@ final class CliCommandTest extends TestCase {
 		$subscription = $this->subscription();
 		$this->assertSame( self::WEBHOOK_URL, $subscription['options']['url'] );
 		$this->assertSame( 'listener-1', $subscription['filter']['blockchainevent']['listener'] );
-		$this->assertContains( 'Success: Subscription sub-1 created.', \WP_CLI::$lines );
+		$this->assertContains( 'Success: Subscription sub-1 saved.', \WP_CLI::$lines );
 	}
 
 	public function test_subscribe_defaults_to_the_site_rest_url(): void {
@@ -101,6 +101,37 @@ final class CliCommandTest extends TestCase {
 		$this->assertSame( rest_url( 'bloclabs-ssi/v1/firefly/events' ), $this->subscription()['options']['url'] );
 	}
 
+	public function test_status_warns_on_unbound_listener_and_rotated_subscription(): void {
+		$GLOBALS['bloclabs_ssi_test_remote_callback'] = static function ( string $url ): array {
+			$body = str_ends_with( $url, '/subscriptions' ) ? array(
+				array(
+					'name'      => 'bloclabs-ssi-login',
+					'transport' => 'webhooks',
+					'options'   => array(
+						'url'     => 'https://old.example/events',
+						'headers' => array( 'X-SSI-Secret' => 'old-secret' ),
+					),
+				),
+			) : array();
+			return array(
+				'response' => array( 'code' => 200 ),
+				'body'     => wp_json_encode( $body ),
+			);
+		};
+		( new Command( Plugin::instance() ) )->status( array(), array() );
+		$this->assertContains( 'Warning: The contract listener has no address binding.', \WP_CLI::$lines );
+		$this->assertContains( 'Warning: Subscription URL or secret differs; run subscribe to update it.', \WP_CLI::$lines );
+		$this->assertStringNotContainsString( 'old-secret', implode( '\n', \WP_CLI::$lines ) );
+	}
+
+	public function test_subscribe_replaces_the_existing_secret_using_put(): void {
+		$GLOBALS['bloclabs_ssi_test_options'][ Settings::OPTION ]['webhook_secret'] = str_repeat( 'r', 32 );
+		Plugin::instance()->settings()->flush();
+		( new Command( Plugin::instance() ) )->subscribe( array(), array( 'webhook-url' => self::WEBHOOK_URL ) );
+		$subscription = $this->subscription();
+		$this->assertContains( str_repeat( 'r', 32 ), $subscription['options']['headers'] );
+	}
+
 	/**
 	 * The one subscription the command posted to FireFly.
 	 *
@@ -110,7 +141,7 @@ final class CliCommandTest extends TestCase {
 		$requests = $GLOBALS['bloclabs_ssi_test_remote_requests'];
 		$this->assertCount( 1, $requests );
 		$this->assertStringEndsWith( '/api/v1/namespaces/default/subscriptions', $requests[0]['url'] );
-		$this->assertSame( 'POST', $requests[0]['args']['method'] );
+		$this->assertSame( 'PUT', $requests[0]['args']['method'] );
 		$this->assertSame( 'application/json', $requests[0]['args']['headers']['Content-Type'] );
 
 		return json_decode( (string) $requests[0]['args']['body'], true );

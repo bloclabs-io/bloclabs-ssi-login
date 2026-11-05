@@ -52,8 +52,12 @@ final class ReviewFixesTest extends TestCase {
 		$this->assertTrue( ( new VerifierException( 'unreachable', 0 ) )->is_transient() );
 		$this->assertTrue( ( new VerifierException( 'not ready', 409 ) )->is_transient() );
 		$this->assertTrue( ( new VerifierException( 'down', 503 ) )->is_transient() );
+		foreach ( array( 408, 425, 429 ) as $code ) {
+			$this->assertTrue( ( new VerifierException( 'busy', $code ) )->is_transient(), "HTTP {$code} is a moment, not a verdict (#30)" );
+		}
 		$this->assertFalse( ( new VerifierException( 'gone', 404 ) )->is_transient() );
 		$this->assertFalse( ( new VerifierException( 'bad', 400 ) )->is_transient() );
+		$this->assertFalse( VerifierException::unusable( 'garbage' )->is_transient(), 'an answer WordPress cannot use is not retried' );
 	}
 
 	public function test_wallet_schemes_are_normalised(): void {

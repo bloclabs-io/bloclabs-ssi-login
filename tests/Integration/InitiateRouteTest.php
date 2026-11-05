@@ -256,6 +256,47 @@ final class InitiateRouteTest extends IntegrationTestCase {
 		$this->assertSame( 3, $attempts->count_recent( 600 ) );
 	}
 
+	/**
+	 * L20 (#30): a row that cannot be stored used to escape as a 500 with the
+	 * exception's path in it, after a cookie had been set for the missing attempt.
+	 */
+	public function test_a_storage_failure_answers_503_without_a_cookie(): void {
+		global $wpdb;
+		$table = \BlocLabs\SsiLogin\Database\Schema::attempts_table();
+		add_filter(
+			'query',
+			static fn ( $query ) => str_contains( (string) $query, "INSERT INTO `{$table}`" ) ? "INSERT INTO `{$table}` (no_such_column) VALUES (1)" : $query
+		);
+
+		$suppressed = $wpdb->suppress_errors();
+		try {
+			$response = $this->dispatch( 'POST', '/initiate' );
+		} finally {
+			$wpdb->suppress_errors( $suppressed );
+		}
+
+		$this->assert_http( 503, $response );
+		$this->assertSame( 'bloclabs_ssi_unavailable', $this->error_code( $response ) );
+		$this->assertSame( 0, $this->attempt_count() );
+		$this->assertSame( '', $this->binding_cookie(), 'no cookie for an attempt that does not exist' );
+		$this->assertSame( 0, VerifierFake::instance()->creates );
+	}
+
+	/**
+	 * L22 (#30): wpdb refuses a value longer than the column and the attempt
+	 * then had no verifier reference, so every completion of it failed.
+	 */
+	public function test_a_verifier_reference_that_cannot_be_stored_fails_the_attempt_here(): void {
+		VerifierFake::instance()->verifier_ref = str_repeat( 'r', 192 );
+
+		$response = $this->dispatch( 'POST', '/initiate' );
+
+		$this->assert_http( 503, $response );
+		$this->assertSame( 'bloclabs_ssi_unavailable', $this->error_code( $response ) );
+		$this->assertSame( 1, $this->attempt_count() );
+		$this->assertSame( 'failed', $this->only_attempt_status() );
+	}
+
 	private function only_attempt_status(): string {
 		global $wpdb;
 		$table  = \BlocLabs\SsiLogin\Database\Schema::attempts_table();
