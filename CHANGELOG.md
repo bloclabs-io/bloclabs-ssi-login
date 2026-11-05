@@ -3,6 +3,7 @@
 ## 0.1.0-dev (unreleased)
 
 - Correct finality, webhook delivery, contract build and claim-retention documentation; add regression coverage for atomic state transitions, login ordering, cookie attributes and version-aware WordPress test installs (#33).
+- Installation and login robustness (#32): fail activation when tables cannot be created, throttle upgrade retries, clear stale wallet prompts on lost bindings, keep long wallet URLs usable when QR encoding fails, use same-origin REST URLs, and require two-step attestor ownership transfer.
 - Add the Handoff stage-label workflow with the four coder/reviewer accounts, including Codex and Grok bots; preserve whole-line commands and Britney-only merge handoffs (#52).
 
 - FireFly event safeguards (#31): require the emitting attestor address, serialize polling with shared cooldowns, order by protocol ID with a clock-skew margin, reject repeated contract decisions, upsert subscriptions on rotation and return JSON webhook acknowledgements.

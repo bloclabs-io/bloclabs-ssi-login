@@ -57,14 +57,19 @@
 			ui.qr.hidden = true; // No encoder vendored: the wallet link still works.
 			return;
 		}
-		const qr = window.qrcode( 0, 'M' );
-		qr.addData( text );
-		qr.make();
-		const img = document.createElement( 'img' );
-		img.src = qr.createDataURL( 6, 2 );
-		img.alt = '';
-		ui.qr.appendChild( img );
-		ui.qr.hidden = false;
+		try {
+			const qr = window.qrcode( 0, 'M' );
+			qr.addData( text );
+			qr.make();
+			const img = document.createElement( 'img' );
+			img.src = qr.createDataURL( 6, 2 );
+			img.alt = '';
+			ui.qr.appendChild( img );
+			ui.qr.hidden = false;
+		} catch ( e ) {
+			ui.qr.hidden = true; // Oversize requests still have a wallet link and a poller.
+		}
+
 	}
 
 	function reset() {
@@ -85,6 +90,12 @@
 			api( 'status/' + encodeURIComponent( id ), { method: 'GET' } ).then( ( r ) => {
 				if ( me !== run ) {
 					return;
+				}
+				if ( r.status === 404 ) {
+					ui.qr.replaceChildren();
+					ui.qr.hidden = true;
+					ui.open.removeAttribute( 'href' );
+					ui.open.hidden = true;
 				}
 				const status = r.ok ? r.data.status : 'error';
 				if ( status === 'pending' ) {
@@ -146,6 +157,7 @@
 			}
 			renderQr( url );
 			ui.open.href = url;
+			ui.open.hidden = false;
 			say( 'waiting' );
 			poll( r.data.attempt, me, ( r.data.poll_after || 2 ) * 1000 );
 		} ).catch( () => {

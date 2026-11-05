@@ -55,7 +55,9 @@ final class Plugin {
 		}
 		$this->booted = true;
 
-		Schema::maybe_upgrade();
+		if ( ! Schema::maybe_upgrade() ) {
+			return;
+		}
 
 		add_action( 'init', array( $this, 'load_textdomain' ) );
 		add_action( 'rest_api_init', fn () => ( new Routes( $this ) )->register() );
