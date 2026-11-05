@@ -28,7 +28,11 @@ final class Lifecycle {
 			);
 		}
 
-		Schema::install();
+		try {
+			Schema::install();
+		} catch ( \RuntimeException $e ) {
+			wp_die( esc_html( $e->getMessage() ) );
+		}
 		Settings::ensure_option();
 		wp_set_option_autoload( Settings::OPTION, false );
 		Settings::ensure_subject_key();
