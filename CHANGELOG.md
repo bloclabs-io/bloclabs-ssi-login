@@ -2,6 +2,8 @@
 
 ## 0.1.0-dev (unreleased)
 
+- Add the Handoff stage-label workflow with the four coder/reviewer accounts, including Codex and Grok bots; preserve whole-line commands and Britney-only merge handoffs (#52).
+
 - FireFly event safeguards (#31): require the emitting attestor address, serialize polling with shared cooldowns, order by protocol ID with a clock-skew margin, reject repeated contract decisions, upsert subscriptions on rotation and return JSON webhook acknowledgements.
 
 - Behind Apache `mod_remoteip` (on in the official WordPress Docker image) or nginx `real_ip`, `client_ip_header` must
