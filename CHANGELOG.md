@@ -2,6 +2,8 @@
 
 ## 0.1.0-dev (unreleased)
 
+- Add the Handoff stage-label workflow with the four coder/reviewer accounts, including Codex and Grok bots; preserve whole-line commands and Britney-only merge handoffs (#52).
+
 - Behind Apache `mod_remoteip` (on in the official WordPress Docker image) or nginx `real_ip`, `client_ip_header` must
   stay empty: the server resolves the client and trims the header, so the plugin would read whatever the visitor wrote
   and the per-client cap could be rotated out of. Documented in readme.txt, the field's help and SECURITY-MODEL
