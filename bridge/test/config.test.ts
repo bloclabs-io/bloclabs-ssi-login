@@ -16,6 +16,13 @@ describe('configuration', () => {
     assert.deepEqual(config.queries['default']?.dcql_query, QUERIES.default.dcql_query);
   });
 
+  it('defaults to unsigned and accepts only explicit signing booleans', () => {
+    assert.equal(loadConfig(baseEnv()).verifierSignedRequest, false);
+    assert.equal(loadConfig(baseEnv({ VERIFIER_SIGNED_REQUEST: 'false' })).verifierSignedRequest, false);
+    assert.equal(loadConfig(baseEnv({ VERIFIER_SIGNED_REQUEST: 'true' })).verifierSignedRequest, true);
+    assert.throws(() => loadConfig(baseEnv({ VERIFIER_SIGNED_REQUEST: 'yes' })), /VERIFIER_SIGNED_REQUEST/);
+  });
+
   it('turns the on-chain issuer check on with FIREFLY_REGISTRY_API', () => {
     assert.equal(loadConfig(baseEnv({ FIREFLY_REGISTRY_API: ' trusted-issuer-registry ' })).firefly.registryApiName, 'trusted-issuer-registry');
     assert.equal(Object.hasOwn(loadConfig(baseEnv({ FIREFLY_REGISTRY_API: '' })).firefly, 'registryApiName'), false, 'empty is unset');

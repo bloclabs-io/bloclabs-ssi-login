@@ -20,6 +20,7 @@
   border colours, pinned as one set, so a theme or login customiser that recolours links or buttons cannot leave the
   text unreadable; a theme recolours them through the `--bloclabs-ssi-button-*` custom properties. The focus ring
   stays visible on any page background (#55).
+- Support signed walt.id authorization requests with `x509_san_dns` or `x509_hash` client identities, private PEM-to-config setup and a self-signed certificate smoke test that uses the default Docker host/context, including Docker Desktop (#72).
 - Link and unlink credentials from your own profile using account- and browser-bound, single-use verified attempts (#70).
 - Add the owner-governed TrustedIssuerRegistry for exact issuer/vct pairs, two-step ownership, executable contract tests in CI and FireFly setup instructions (#71).
 
