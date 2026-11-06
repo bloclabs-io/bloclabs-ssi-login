@@ -50,6 +50,23 @@ if ( ! function_exists( 'is_multisite' ) ) {
 		return ! empty( $GLOBALS['bloclabs_ssi_test_multisite'] );
 	}
 }
+if ( ! function_exists( 'current_user_can' ) ) {
+	/**
+	 * @param mixed $args
+	 */
+	function current_user_can( string $capability, ...$args ): bool { // phpcs:ignore Generic.CodeAnalysis.UnusedFunctionParameter
+		$caps = $GLOBALS['bloclabs_ssi_test_caps'] ?? array();
+		return is_array( $caps ) && in_array( $capability, $caps, true );
+	}
+}
+if ( ! function_exists( 'is_super_admin' ) ) {
+	/**
+	 * @param int|false $user_id
+	 */
+	function is_super_admin( $user_id = false ): bool { // phpcs:ignore Generic.CodeAnalysis.UnusedFunctionParameter
+		return ! empty( $GLOBALS['bloclabs_ssi_test_super_admin'] );
+	}
+}
 if ( ! function_exists( '__' ) ) {
 	function __( $text, $domain = 'default' ) { // phpcs:ignore Generic.CodeAnalysis.UnusedFunctionParameter, WordPress.WP.I18n
 		return $text;

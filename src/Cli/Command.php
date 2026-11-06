@@ -1,6 +1,6 @@
 <?php
 /**
- * wp bloclabs-ssi <status|subscribe|purge>
+ * wp bloclabs-ssi <status|subscribe|purge|links>
  *
  * phpcs:disable Generic.CodeAnalysis.UnusedFunctionParameter -- WP-CLI passes ($args, $assoc_args) to every subcommand.
  *
@@ -11,6 +11,7 @@ declare(strict_types=1);
 
 namespace BlocLabs\SsiLogin\Cli;
 
+use BlocLabs\SsiLogin\Admin\UserLinksScreen;
 use BlocLabs\SsiLogin\FireFly\FireFlyException;
 use BlocLabs\SsiLogin\Plugin;
 use BlocLabs\SsiLogin\Rest\WebhookController;
@@ -136,5 +137,167 @@ final class Command {
 	public function purge( array $args, array $assoc ): void {
 		$deleted = $this->plugin->attempts()->purge( DAY_IN_SECONDS );
 		\WP_CLI::success( "Deleted {$deleted} old attempts." );
+	}
+
+	/**
+	 * Lists or unlinks credential links on this site.
+	 *
+	 * The subject identifier and the subject hash are never printed. Each row is
+	 * the account, the opaque label, the issuer and the last-used time.
+	 *
+	 * Limit `list` with `--login`. WP-CLI keeps `--user` as its global option
+	 * (the account that runs the command), so this command does not declare it.
+	 * On multisite the command sees the site selected with WP-CLI's `--url`.
+	 *
+	 * ## OPTIONS
+	 *
+	 * <command>
+	 * : `list` or `unlink`.
+	 *
+	 * [<user>]
+	 * : For `unlink`, the account (ID, login or email). For `list`, an optional
+	 *   account to show. `--login` wins when both are given.
+	 *
+	 * [--login=<user>]
+	 * : With `list`, show one account: a user ID, login or email.
+	 *
+	 * [--yes]
+	 * : With `unlink`, skip the confirmation.
+	 *
+	 * ## EXAMPLES
+	 *
+	 *     wp bloclabs-ssi links list
+	 *     wp bloclabs-ssi links list --login=ada
+	 *     wp bloclabs-ssi links unlink ada
+	 *
+	 * @param list<string>         $args
+	 * @param array<string, mixed> $assoc
+	 */
+	public function links( array $args, array $assoc ): void {
+		$this->assert_can_manage_links();
+		$command = isset( $args[0] ) ? (string) $args[0] : '';
+		if ( 'list' === $command ) {
+			$this->list_links( $args, $assoc );
+			return;
+		}
+		if ( 'unlink' === $command ) {
+			$this->unlink_links( $args, $assoc );
+			return;
+		}
+		\WP_CLI::error( 'Usage: wp bloclabs-ssi links list [--login=<user>] | wp bloclabs-ssi links unlink <user>' );
+	}
+
+	/**
+	 * One listing row. Tabs and line breaks in a cell are flattened so a value
+	 * cannot invent an extra column.
+	 */
+	public static function format_link( string $account, string $label, string $issuer, string $last_used ): string {
+		$label  = '' !== $label ? $label : '-';
+		$issuer = '' !== $issuer ? $issuer : '-';
+		$last   = '' !== $last_used ? $last_used : 'never';
+		return self::cell( $account ) . "\t" . self::cell( $label ) . "\t" . self::cell( $issuer ) . "\t" . self::cell( $last );
+	}
+
+	/**
+	 * @param list<string>         $args
+	 * @param array<string, mixed> $assoc
+	 */
+	private function list_links( array $args, array $assoc ): void {
+		$user_id = null;
+		$who     = $this->list_filter( $args, $assoc );
+		if ( '' !== $who ) {
+			$user_id = $this->require_user( $who )->ID;
+		}
+
+		$links = $this->plugin->identities()->links_for( $user_id );
+		if ( array() === $links ) {
+			\WP_CLI::log( 'No linked credentials.' );
+			return;
+		}
+
+		\WP_CLI::log( "account\tcredential\tissuer\tlast_used" );
+		foreach ( $links as $link ) {
+			$account = get_userdata( $link['user_id'] );
+			$login   = $account instanceof \WP_User ? $account->user_login : '#' . $link['user_id'];
+			\WP_CLI::log( self::format_link( $login, $link['subject_label'], $link['issuer'], $link['last_login_at'] ) );
+		}
+	}
+
+	/**
+	 * @param list<string>         $args
+	 * @param array<string, mixed> $assoc
+	 */
+	private function unlink_links( array $args, array $assoc ): void {
+		$who = isset( $args[1] ) ? trim( (string) $args[1] ) : '';
+		if ( '' === $who ) {
+			\WP_CLI::error( 'Usage: wp bloclabs-ssi links unlink <user>' );
+		}
+		$user  = $this->require_user( $who );
+		$links = $this->plugin->identities()->links_for( $user->ID );
+		if ( array() === $links ) {
+			\WP_CLI::warning( sprintf( 'No linked credential for %s.', $user->user_login ) );
+			return;
+		}
+
+		\WP_CLI::confirm(
+			sprintf(
+				/* translators: 1: number of credentials, 2: WordPress username. */
+				_n( 'Unlink %1$d credential from %2$s?', 'Unlink %1$d credentials from %2$s?', count( $links ), 'bloclabs-ssi-login' ),
+				count( $links ),
+				$user->user_login
+			),
+			$assoc
+		);
+		$this->plugin->identities()->unlink_user( $user->ID );
+		\WP_CLI::success(
+			sprintf(
+				/* translators: 1: number of credentials, 2: WordPress username. */
+				_n( 'Unlinked %1$d credential from %2$s.', 'Unlinked %1$d credentials from %2$s.', count( $links ), 'bloclabs-ssi-login' ),
+				count( $links ),
+				$user->user_login
+			)
+		);
+	}
+
+	/**
+	 * @param list<string>         $args
+	 * @param array<string, mixed> $assoc
+	 */
+	private function list_filter( array $args, array $assoc ): string {
+		if ( isset( $assoc['login'] ) && is_scalar( $assoc['login'] ) ) {
+			return trim( (string) $assoc['login'] );
+		}
+		return isset( $args[1] ) ? trim( (string) $args[1] ) : '';
+	}
+
+	private function assert_can_manage_links(): void {
+		if ( UserLinksScreen::can_manage() ) {
+			return;
+		}
+		$message = is_multisite()
+			? 'A network administrator has to run this (manage_network_users). Use WP-CLI --user to choose that account.'
+			: 'An account with edit_users has to run this. Use WP-CLI --user to choose that account.';
+		\WP_CLI::error( $message );
+	}
+
+	private function require_user( string $who ): \WP_User {
+		if ( '' === $who ) {
+			\WP_CLI::error( 'Give a user ID, login or email.' );
+		}
+		if ( ctype_digit( $who ) ) {
+			$user = get_user_by( 'id', (int) $who );
+		} elseif ( is_email( $who ) ) {
+			$user = get_user_by( 'email', $who );
+		} else {
+			$user = get_user_by( 'login', $who );
+		}
+		if ( ! $user instanceof \WP_User ) {
+			\WP_CLI::error( 'No such user.' );
+		}
+		return $user;
+	}
+
+	private static function cell( string $value ): string {
+		return str_replace( array( "\t", "\r", "\n" ), ' ', $value );
 	}
 }
