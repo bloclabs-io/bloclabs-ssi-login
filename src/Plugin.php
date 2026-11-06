@@ -75,6 +75,9 @@ final class Plugin {
 
 		if ( is_admin() ) {
 			( new SettingsPage( $this->settings() ) )->register();
+		}
+
+		if ( is_admin() ) {
 			( new UserLinksScreen( $this->identities() ) )->register();
 		}
 
