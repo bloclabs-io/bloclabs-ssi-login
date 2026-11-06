@@ -3,6 +3,14 @@
 ## 0.1.0-dev (unreleased)
 
 - Auto-provisioned accounts take their display, first and last name from the disclosed `given_name` and `family_name` when the credential has no `name` claim, as SD-JWT VC identity credentials usually don't; the display name still falls back to the login, and the e-mail claim is still never used (#56).
+- ADR 0006: issuer trust moves from the bridge's walt.id `allowed-issuer` policy to an owner-governed on-chain
+  `TrustedIssuerRegistry` of `(issuer, vct)` pairs, which the bridge queries through FireFly before it attests, with
+  what stays off chain (signatures, holder binding, revocation) and the migration; ARCHITECTURE.md and
+  SECURITY-MODEL.md (threats 22 and 23) describe issuer trust accordingly (#74). Docs only, no code change.
+- Bridge: with `FIREFLY_REGISTRY_API` set to the `TrustedIssuerRegistry` contract's FireFly API, every presented
+  credential's issuer and `vct` are checked on chain (`isTrusted`) before the decision is attested. An untrusted pair
+  is attested as a rejection (`result = 2`); when FireFly cannot answer, the attempt fails closed and nothing is
+  attested. Unset, the walt.id `allowed-issuer` policy decides alone, as before (#73).
 - ADR 0007, agent login with an application token (#75): how an agent proves who it is (its holder key) and who
   it acts for (an `acts_for` claim from a trusted issuer, or a key linked here) with an SD-JWT VC and no browser;
   the opaque, scoped, short-lived bearer token WordPress issues instead of a cookie, its storage, lifetime and
@@ -12,6 +20,8 @@
   border colours, pinned as one set, so a theme or login customiser that recolours links or buttons cannot leave the
   text unreadable; a theme recolours them through the `--bloclabs-ssi-button-*` custom properties. The focus ring
   stays visible on any page background (#55).
+- Add the owner-governed TrustedIssuerRegistry for exact issuer/vct pairs, two-step ownership, executable contract tests in CI and FireFly setup instructions (#71).
+
 - Handoff labels use live PR draft/state data and an Actions-bot head checkpoint so replaced push jobs and delayed old handoffs cannot preserve an earlier approval (bloclabs-io/blocLabs-LearnPress-API-Extension#97).
 
 - Correct finality, webhook delivery, contract build and claim-retention documentation; add regression coverage for atomic state transitions, login ordering, cookie attributes and version-aware WordPress test installs (#33).

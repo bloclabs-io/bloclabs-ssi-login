@@ -48,7 +48,7 @@ Build with **solc 0.8.28**, explicitly targeting **Paris** (the same EVM target 
 
 ```sh
 solc --version # must report 0.8.28
-solc --optimize --evm-version paris --abi --bin contracts/SsiLoginAttestor.sol -o build
+solc --optimize --evm-version paris --abi --bin contracts/SsiLoginAttestor.sol contracts/TrustedIssuerRegistry.sol -o build
 ```
 
 Use the resulting ABI and bytecode below. Solidity 0.8.24+ defaults to an EVM target
@@ -84,6 +84,41 @@ Paris target keeps the deployment compatible; do not compile with an implicit de
    ```
    `fastack: false` makes FireFly wait for WordPress's 2xx before acknowledging, so a failed delivery is retried.
    `readAhead` buffers events; with `fastack: false`, one delivery goroutine processes each event and its full retry cycle before the next event. It does not parallelise HTTP deliveries. Slow requests therefore block the queue. Operators can set `httpOptions.requestTimeout` in the webhook options to bound each request; choose it above measured WordPress processing time, since a shorter timeout can cause retries after a successful write. WordPress is idempotent.
+
+6. **Deploy the trusted-issuer registry.** Use `TrustedIssuerRegistry`'s ABI and bytecode from the same Paris build.
+   `POST /contracts/deploy?confirm=true`:
+   ```json
+   {"contract": "0x<registry bytecode>", "definition": [<registry abi>], "input": [], "key": "<registry owner address>"}
+   ```
+   There are no constructor arguments. The deployer's signing address becomes `owner`; record the answer's
+   `output.contractLocation.address` separately from the attestor address.
+7. **Register the registry interface and API.** `POST /contracts/interfaces/generate` with
+   `{"name": "TrustedIssuerRegistry", "version": "1.0", "input": {"abi": [<registry abi>]}}`, then
+   `POST /contracts/interfaces?confirm=true` with the generated result. Publish with `POST /apis?confirm=true`:
+   ```json
+   {"name": "trusted-issuer-registry", "interface": {"id": "<registry interface id>"}, "location": {"address": "<registry contract>"}}
+   ```
+8. **Set and query issuer policy.** The owner calls `POST /apis/trusted-issuer-registry/invoke/setIssuer?confirm=true`:
+   ```json
+   {"key": "<registry owner address>", "input": {"issuer": "did:example:issuer", "vct": "urn:example:credential", "trusted": true}}
+   ```
+   Use `trusted: false` to revoke the pair. `IssuerSet(bytes32 indexed key, string issuer, string vct,
+   bool trusted, address indexed by)` records every update; `key = keccak256(abi.encode(issuer, vct))`.
+   Issuer and vct are exact, case-sensitive strings, with no wildcard or normalization. Only public issuer/type
+   policy belongs here: both strings are visible on chain; never use holder identifiers or private claims.
+
+   Query `POST /apis/trusted-issuer-registry/query/isTrusted`:
+   ```json
+   {"input": {"issuer": "did:example:issuer", "vct": "urn:example:credential"}}
+   ```
+   The response is `{"output": true}` or `{"output": false}`. Unknown and revoked pairs return false.
+   Ownership follows the attestor's two-step process: the current owner invokes `transferOwnership` with
+   `{"newOwner": "<proposed owner address>"}`, then that address invokes `acceptOwnership` with `{}` input,
+   both through this API's `/invoke/<method>?confirm=true` endpoint with the caller's `key`.
+   The current owner retains authority until acceptance; a pending owner has no policy-writing authority.
+
+Run the contract tests locally with Foundry v1.4.4: `forge test -vv`.
+The checked-in test configuration pins solc 0.8.28, optimization and the Paris EVM target, as in CI.
 
 ## Runtime calls
 

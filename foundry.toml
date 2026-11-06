@@ -1,0 +1,8 @@
+[profile.default]
+src = "contracts"
+test = "tests/Contracts"
+out = "tests/Contracts/.forge-out"
+cache_path = "tests/Contracts/.forge-cache"
+solc_version = "0.8.28"
+evm_version = "paris"
+optimizer = true
