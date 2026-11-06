@@ -34,6 +34,9 @@ services:
       # The address FireFly signs with. The contract owner must have authorised it (setVerifier).
       FIREFLY_SIGNING_KEY: "0x<verifier-signing-address>"
       # FIREFLY_AUTH_HEADER: "Bearer <token-of-the-authenticating-proxy-in-front-of-firefly>"
+      # The TrustedIssuerRegistry's FireFly API. Set it and every presented credential's issuer and
+      # type must be trusted on chain; the attempt fails closed when the registry cannot answer.
+      # FIREFLY_REGISTRY_API: "trusted-issuer-registry"
       BRIDGE_LOG_LEVEL: "info"
       # Named queries. `default` is what the plugin asks for unless its `credential_query`
       # setting says otherwise: one SD-JWT VC with cryptographic holder binding (the DCQL

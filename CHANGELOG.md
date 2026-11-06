@@ -2,11 +2,21 @@
 
 ## 0.1.0-dev (unreleased)
 
+- Bridge: with `FIREFLY_REGISTRY_API` set to the `TrustedIssuerRegistry` contract's FireFly API, every presented
+  credential's issuer and `vct` are checked on chain (`isTrusted`) before the decision is attested. An untrusted pair
+  is attested as a rejection (`result = 2`); when FireFly cannot answer, the attempt fails closed and nothing is
+  attested. Unset, the walt.id `allowed-issuer` policy decides alone, as before (#73).
+- ADR 0007, agent login with an application token (#75): how an agent proves who it is (its holder key) and who
+  it acts for (an `acts_for` claim from a trusted issuer, or a key linked here) with an SD-JWT VC and no browser;
+  the opaque, scoped, short-lived bearer token WordPress issues instead of a cookie, its storage, lifetime and
+  revocation; the unchanged on-chain attestation; threats; and the follow-up implementation issues. Docs only,
+  no code change.
 - The "Log in with a digital credential" button and the wallet link on wp-login.php keep their own text, background and
   border colours, pinned as one set, so a theme or login customiser that recolours links or buttons cannot leave the
   text unreadable; a theme recolours them through the `--bloclabs-ssi-button-*` custom properties. The focus ring
   stays visible on any page background (#55).
-- Support signed walt.id authorization requests with `x509_san_dns` or `x509_hash` client identities, private PEM-to-config setup and a self-signed certificate smoke test (#72).
+- Support signed walt.id authorization requests with `x509_san_dns` or `x509_hash` client identities, private PEM-to-config setup and a self-signed certificate smoke test that uses the default Docker host/context, including Docker Desktop (#72).
+- Add the owner-governed TrustedIssuerRegistry for exact issuer/vct pairs, two-step ownership, executable contract tests in CI and FireFly setup instructions (#71).
 
 - Handoff labels use live PR draft/state data and an Actions-bot head checkpoint so replaced push jobs and delayed old handoffs cannot preserve an earlier approval (bloclabs-io/blocLabs-LearnPress-API-Extension#97).
 

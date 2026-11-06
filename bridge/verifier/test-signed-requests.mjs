@@ -8,10 +8,8 @@ import { join, resolve } from 'node:path';
 import { setTimeout } from 'node:timers/promises';
 import { buildSessionSetup, VerifierClient } from '../dist/src/verifier.js';
 
-// Control only the local daemon, never an inherited remote context.
-const dockerEnv = { ...process.env };
-for (const key of ['DOCKER_HOST', 'DOCKER_CONTEXT', 'DOCKER_TLS', 'DOCKER_TLS_VERIFY', 'DOCKER_CERT_PATH']) delete dockerEnv[key];
-const docker = (...args) => execFileSync('docker', ['--host=unix:///var/run/docker.sock', ...args], { env: dockerEnv, encoding: 'utf8' }).trim();
+// Honor Docker's default host/context, including Docker Desktop and DOCKER_HOST.
+const docker = (...args) => execFileSync('docker', args, { encoding: 'utf8' }).trim();
 const dir = mkdtempSync(join(tmpdir(), 'bridge-live-signing-'));
 const key = join(dir, 'key.pem');
 const cert = join(dir, 'cert.pem');
