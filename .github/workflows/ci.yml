@@ -102,3 +102,16 @@ jobs:
           cache-dependency-path: bridge/package-lock.json
       - run: npm ci
       - run: npm test
+
+  wp-env:
+    name: Integration (wp-env)
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci
+      - run: npm run test:wp-env

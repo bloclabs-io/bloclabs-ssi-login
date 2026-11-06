@@ -2,6 +2,7 @@
 
 ## 0.1.0-dev (unreleased)
 
+- `npm run test:wp-env` runs the WordPress integration suite in wp-env (WordPress 6.6.10 on PHP 8.3, single site and multisite). Pull requests run that job as well as the existing MySQL integration jobs (#68).
 - The "Log in with a digital credential" button and the wallet link on wp-login.php keep their own text, background and
   border colours, pinned as one set, so a theme or login customiser that recolours links or buttons cannot leave the
   text unreadable; a theme recolours them through the `--bloclabs-ssi-button-*` custom properties. The focus ring
