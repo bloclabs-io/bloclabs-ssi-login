@@ -100,6 +100,66 @@ final class CompleteRouteTest extends IntegrationTestCase {
 		$this->assertSame( 'consumed', $this->attempt_row( $public_id )['status'] );
 	}
 
+	/**
+	 * SD-JWT VC identity credentials usually disclose `given_name` and
+	 * `family_name` and no `name`: the new account takes its display, first and
+	 * last name from them. The e-mail claim is still never stored (#56).
+	 */
+	public function test_auto_provision_names_the_account_from_given_and_family_name(): void {
+		$this->configure( array( 'linking_policy' => Settings::AUTO_PROVISION ) );
+		VerifierFake::instance()->claims = array(
+			'given_name'  => 'Ada',
+			'family_name' => 'Lovelace',
+			'email'       => 'ada@example.com',
+		);
+		$opened                          = $this->open_attempt();
+		$public_id                       = (string) $opened['data']['attempt'];
+		$this->attest( $opened['row'] );
+
+		$response = $this->complete( $public_id );
+
+		$this->assert_http( 200, $response );
+		$user = wp_get_current_user();
+		$this->assertSame( $this->provisioned_login(), $user->user_login );
+		$this->assertSame( 'Ada Lovelace', $user->display_name );
+		$this->assertSame( 'Ada', $user->first_name );
+		$this->assertSame( 'Lovelace', $user->last_name );
+		$this->assertSame( '', $user->user_email );
+		$this->assertSame( 'consumed', $this->attempt_row( $public_id )['status'] );
+	}
+
+	/**
+	 * Under link_only the disclosed names change nothing: the linked account keeps its own (#56).
+	 */
+	public function test_link_only_leaves_the_linked_accounts_names_alone(): void {
+		$this->configure( array( 'linking_policy' => Settings::LINK_ONLY ) );
+		$user_id = self::factory()->user->create(
+			array(
+				'role'         => 'subscriber',
+				'display_name' => 'Original',
+				'first_name'   => 'Orig',
+				'last_name'    => 'Inal',
+			)
+		);
+		$this->link_subject( $user_id );
+		VerifierFake::instance()->claims = array(
+			'given_name'  => 'Ada',
+			'family_name' => 'Lovelace',
+		);
+		$opened                          = $this->open_attempt();
+		$public_id                       = (string) $opened['data']['attempt'];
+		$this->attest( $opened['row'] );
+
+		$response = $this->complete( $public_id );
+
+		$this->assert_http( 200, $response );
+		$this->assertSame( $user_id, get_current_user_id() );
+		$user = get_userdata( $user_id );
+		$this->assertSame( 'Original', $user->display_name );
+		$this->assertSame( 'Orig', $user->first_name );
+		$this->assertSame( 'Inal', $user->last_name );
+	}
+
 	public function test_allow_login_false_refuses(): void {
 		$user_id = self::factory()->user->create( array( 'role' => 'subscriber' ) );
 		$this->link_subject( $user_id );

@@ -10,6 +10,7 @@
   the prompt is dismissed, unsupported or undeliverable; whichever session answers first is attested once under
   the attempt's correlation id. Without the setting or the API nothing changes. docs/BRIDGE-API.md defines the
   field.
+- Auto-provisioned accounts take their display, first and last name from the disclosed `given_name` and `family_name` when the credential has no `name` claim, as SD-JWT VC identity credentials usually don't; the display name still falls back to the login, and the e-mail claim is still never used (#56).
 - ADR 0006: issuer trust moves from the bridge's walt.id `allowed-issuer` policy to an owner-governed on-chain
   `TrustedIssuerRegistry` of `(issuer, vct)` pairs, which the bridge queries through FireFly before it attests, with
   what stays off chain (signatures, holder binding, revocation) and the migration; ARCHITECTURE.md and
