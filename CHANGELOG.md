@@ -2,6 +2,10 @@
 
 ## 0.1.0-dev (unreleased)
 
+- ADR 0006: issuer trust moves from the bridge's walt.id `allowed-issuer` policy to an owner-governed on-chain
+  `TrustedIssuerRegistry` of `(issuer, vct)` pairs, which the bridge queries through FireFly before it attests, with
+  what stays off chain (signatures, holder binding, revocation) and the migration; ARCHITECTURE.md and
+  SECURITY-MODEL.md (threats 22 and 23) describe issuer trust accordingly (#74). Docs only, no code change.
 - Bridge: with `FIREFLY_REGISTRY_API` set to the `TrustedIssuerRegistry` contract's FireFly API, every presented
   credential's issuer and `vct` are checked on chain (`isTrusted`) before the decision is attested. An untrusted pair
   is attested as a rejection (`result = 2`); when FireFly cannot answer, the attempt fails closed and nothing is
