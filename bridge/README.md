@@ -15,12 +15,21 @@ sequenceDiagram
     participant FF as FireFly
 
     WP->>BR: POST /v1/presentation-requests {correlation_id, nonce, blinding_secret, query, expires_at}
-    BR->>V: POST /verification-session/create (DCQL query, expiry, webhook)
+    BR->>V: POST /verification-session/create (cross_device: DCQL query, expiry, webhook)
     V-->>BR: {sessionId, bootstrapAuthorizationRequestUrl}
-    BR-->>WP: 201 {id, wallet_url}
-    W->>V: OpenID4VP: request_uri, then direct_post vp_token
-    V->>BR: POST /v1/verifier-callbacks/{id} (doorbell, per-request bearer token)
-    BR->>V: GET /verification-session/{id}/info
+    opt BRIDGE_DC_API_ORIGINS set
+        BR->>V: POST /verification-session/create (dc_api_openid4vp, expectedOrigins)
+        BR->>V: GET /verification-session/{dc id}/request
+        V-->>BR: {digital: {requests: [{protocol, data}]}}
+    end
+    BR-->>WP: 201 {id, wallet_url, dc_api}
+    alt QR code or wallet link
+        W->>V: OpenID4VP: request_uri, then direct_post vp_token
+    else browser's Digital Credentials API
+        W->>V: the login page posts {protocol, data} to /verification-session/{dc id}/response
+    end
+    V->>BR: POST /v1/verifier-callbacks/{session} (doorbell, per-request bearer token)
+    BR->>V: GET /verification-session/{session}/info
     opt FIREFLY_REGISTRY_API set
         BR->>FF: POST /apis/trusted-issuer-registry/query/isTrusted {issuer, vct}
         FF-->>BR: {output: true|false}, or no answer (attempt fails closed)
@@ -37,9 +46,16 @@ sequenceDiagram
 1. **Opens a verifier session** per login attempt: a cross-device OpenID4VP 1.0 session with the DCQL query named by
    WordPress, expiring at the attempt's `expires_at`, retained for a minute longer, and with a webhook back to the
    bridge. walt.id picks the OpenID4VP `nonce` itself; the attempt is bound by `correlation_id`, not by the nonce.
+   With `BRIDGE_DC_API_ORIGINS` set it opens a second session for the same attempt, of walt.id's flow type
+   `dc_api_openid4vp`, bound to the login pages' origins, and returns its request as `dc_api` (walt.id's own
+   `{digital: {requests}}` wrapper from `GET …/request`) with the public response route the login page posts the
+   browser's answer to. The holder answers one of the two; the first decision settles the attempt and the other
+   session can no longer change it. If the second session cannot be opened and read within two seconds of the
+   request arriving (WordPress waits five seconds for the whole answer, and the QR code must not be late for an
+   extra), the error is logged and `dc_api` is `null`: the QR code stands alone.
 2. **Treats the verifier's webhook as a doorbell.** Every session update makes the bridge re-read the session from the
    verifier; the posted body is never trusted. The callback route is authenticated with a random bearer token the
-   bridge gave the verifier for that session only.
+   bridge gave the verifier for that request's sessions only; each session rings under its own id.
 3. **Reads the decision.** `SUCCESSFUL` means every presentation and credential policy passed (holder binding over the
    verifier's nonce and audience, issuer signature, and whatever `policies` the query adds, such as allowed issuers and
    status lists). `FAILED` is a rejection, including a wallet's OpenID4VP error response.
@@ -67,13 +83,15 @@ Nothing personal is logged: request ids, states, FireFly operation ids and error
 |---|---|---|
 | `POST /v1/presentation-requests` | WordPress | `Authorization: Bearer <BRIDGE_AUTH_TOKEN>` |
 | `GET /v1/presentation-requests/{id}/result` | WordPress | same |
-| `POST /v1/verifier-callbacks/{id}` | walt.id (session webhook) | per-session bearer token |
+| `POST /v1/verifier-callbacks/{session}` | walt.id (session webhook) | per-request bearer token |
 | `GET /healthz` | container health check | none |
 
 The WordPress routes belong on a private network: the result route returns claims, and its id appears in the QR code.
 The verifier's wallet-facing endpoints (`/verification-session/{id}/request` and `/response`) are the only public
-surface; its management endpoints (`/create`, `/info`) must not be reachable from the internet either, because walt.id
-does not authenticate callers.
+surface; with the Digital Credentials API path the login page in the visitor's browser posts to `/response` as well,
+so that route must stay reachable from browsers, which walt.id 1.2.0 allows for every origin in its CORS settings.
+Its management endpoints (`/create`, `/info`) must not be reachable from the internet either, because walt.id does
+not authenticate callers.
 
 ## Configuration
 
@@ -92,6 +110,8 @@ Environment variables only.
 | `FIREFLY_AUTH_HEADER` | no | `Authorization` header for an authenticating proxy in front of FireFly. Sent on the registry query too. |
 | `FIREFLY_REGISTRY_API` | no | The FireFly API name of the `TrustedIssuerRegistry` contract (`trusted-issuer-registry` in docs/FIREFLY-FLOW.md), in the same namespace. When set, every presented credential's `(iss, vct)` must be trusted on chain (step 4 above); the attempt fails closed when the registry cannot answer. Unset: no on-chain check. |
 | `BRIDGE_QUERIES` | yes | JSON object of named queries (below). Must contain `default`. |
+| `BRIDGE_DC_API_ORIGINS` | no | Turns on the Digital Credentials API path: the origins of the login pages (`https://site.example`, with the port if any; one per site, separated by commas or whitespace), as the browser reports them to the wallet. Scheme, host and port only, and a secure context: `https`, or `http` on localhost for a test stack. Unset, every `dc_api` is `null`. |
+| `VERIFIER_PUBLIC_URL` | with the above | walt.id verifier-api2 base URL as browsers reach it, e.g. `https://<verifier-public-host>`: the login page posts the browser's answer to `<VERIFIER_PUBLIC_URL>/verification-session/{id}/response`. Must be `https` when the site is. |
 | `BRIDGE_PORT` | no | Default `8090`. |
 | `BRIDGE_LISTEN_HOST` | no | Default `0.0.0.0`. |
 | `BRIDGE_LOG_LEVEL` | no | `debug`, `info` (default), `warn`, `error`. |
@@ -236,4 +256,6 @@ It does not exercise a phone presentation, FireFly or WordPress.
 - The verifier's webhook is the only trigger. walt.id does not retry a failed webhook, so if the bridge is down at
   that moment the attempt expires. Several updates are posted per session, so a single lost delivery is usually
   caught by the next one.
-- The Digital Credentials API path (`dc_api` in the response) is not implemented; it is always `null`.
+- The Digital Credentials API path is off unless `BRIDGE_DC_API_ORIGINS` is set. walt.id then builds the request
+  unsigned with the answer in clear (`response_mode: dc_api`) unless its own configuration signs or encrypts; the
+  bridge does not choose. It also costs a second verifier session, and two more verifier calls, per login attempt.

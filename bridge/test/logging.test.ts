@@ -5,7 +5,7 @@ import { AUTH_TOKEN, BLINDING_SECRET, requestBody, SD_JWT_PRESENTATION, startBri
 
 describe('logging', () => {
   it('logs a whole login without claims, subjects, presentations, nonces or tokens', async () => {
-    const t = await startBridge();
+    const t = await startBridge({ BRIDGE_DC_API_ORIGINS: 'https://site.example', VERIFIER_PUBLIC_URL: 'https://verifier.example.com' });
     try {
       const correlationId = 'c0ffee'.repeat(10) + 'c0ff';
       const nonce = 'wp-nonce-SECRET-q2F8kZ0';
@@ -13,9 +13,11 @@ describe('logging', () => {
       const id = (opened.body as { id: string }).id;
       const callbackToken = (((t.verifier.createCalls[0]!['core_flow'] as Record<string, unknown>)['notifications']) as { webhook: { bearer_token: string } }).webhook.bearer_token;
 
-      t.verifier.setSession(id, successfulSession(id));
-      await t.verifier.fireCallback(id, 'attempted_presentation');
-      await t.verifier.fireCallback(id);
+      // This login comes through the browser's Digital Credentials API session.
+      const dcId = /\/verification-session\/([^/]+)\/response$/.exec((opened.body as { dc_api: { response_url: string } }).dc_api.response_url)![1]!;
+      t.verifier.setSession(dcId, successfulSession(dcId));
+      await t.verifier.fireCallback(dcId, 'attempted_presentation');
+      await t.verifier.fireCallback(dcId);
       await t.bridge.idle();
       const result = await t.call('GET', `/v1/presentation-requests/${id}/result`);
       assert.equal(result.status, 200);
@@ -30,6 +32,7 @@ describe('logging', () => {
 
       const output = t.logs.join('\n');
       assert.ok(output.includes(id), 'request ids are logged');
+      assert.ok(output.includes(dcId), 'session ids are logged');
       assert.ok(output.includes('decision attested'), 'decisions are logged');
       for (const secret of ['Ada', 'Lovelace', 'ada@example.com', 'London', subject, SD_JWT_PRESENTATION, 'verifier-nonce', nonce, BLINDING_SECRET, AUTH_TOKEN, callbackToken, correlationId, 'did:web:issuer.example.com']) {
         assert.equal(output.includes(secret), false, `logs must not contain ${secret.slice(0, 12)}…`);

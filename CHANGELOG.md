@@ -2,6 +2,14 @@
 
 ## 0.1.0-dev (unreleased)
 
+- Same-device login through the browser's Digital Credentials API (#76). With `BRIDGE_DC_API_ORIGINS` and
+  `VERIFIER_PUBLIC_URL` set, the bridge opens a second walt.id session (`dc_api_openid4vp`, bound to the login
+  pages' origins) next to the QR code's and returns it as `dc_api`: the `requests` for `navigator.credentials.get`
+  and the verifier's `response_url`. Where the browser has the API, the login page asks the wallet through it on
+  the click, posts the answer to the verifier without cookies, and falls back to the QR code and wallet link when
+  the prompt is dismissed, unsupported or undeliverable; whichever session answers first is attested once under
+  the attempt's correlation id. Without the setting or the API nothing changes. docs/BRIDGE-API.md defines the
+  field.
 - Auto-provisioned accounts take their display, first and last name from the disclosed `given_name` and `family_name` when the credential has no `name` claim, as SD-JWT VC identity credentials usually don't; the display name still falls back to the login, and the e-mail claim is still never used (#56).
 - ADR 0006: issuer trust moves from the bridge's walt.id `allowed-issuer` policy to an owner-governed on-chain
   `TrustedIssuerRegistry` of `(issuer, vct)` pairs, which the bridge queries through FireFly before it attests, with
