@@ -1,6 +1,6 @@
 {
   "name": "bloclabs-ssi-bridge",
-  "version": "0.2.0-dev",
+  "version": "0.3.0",
   "private": true,
   "description": "Verifier bridge between wallets (via walt.id verifier-api2), WordPress and Hyperledger FireFly for blocLabs SSI Login.",
   "license": "GPL-2.0-or-later",

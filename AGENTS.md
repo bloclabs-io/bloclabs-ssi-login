@@ -19,7 +19,7 @@ Roles since 2026-11-04 (founder): Britney tests and deploys; Fable, Codex and Gr
 ## Pull requests
 
 - Follow `CONTRIBUTING.md`. Close one issue (`Closes #N`); no feature, refactor or dependency the issue doesn't ask for.
-- Add a `CHANGELOG.md` entry under the current unreleased section at the top (now `## 0.1.0-dev (unreleased)`); don't start a second one.
+- Add a `CHANGELOG.md` entry under the current unreleased section at the top (now `## 0.4.0-dev (unreleased)`); don't start a second one.
 - Say what you ran and what you couldn't verify.
 - When the newest Codex review has no unresolved P0 or P1, post a comment on the pull request with `Handoff: test` on a line of its own. A `Handoff:` line in the description doesn't count.
 

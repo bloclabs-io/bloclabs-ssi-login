@@ -8,9 +8,10 @@ A verifier checks it and records its decision on a blockchain through
 [Hyperledger FireFly](https://hyperledger-firefly.github.io/firefly/latest/). FireFly streams that record to
 WordPress, which logs the visitor in. The chain holds commitments only, never claims or identifiers.
 
-> **Status: pre-alpha (0.1.0-dev).** The plugin framework, the attestor contract, the FireFly event path and the
-> reference verifier bridge ([`bridge/`](bridge/), on walt.id verifier-api2) are built and unit-tested. A login has
-> not been exercised end to end with a real wallet yet, so treat the whole as unreleased. See [Roadmap](#roadmap).
+> **Status: 0.3.0, first release (2026-11-06).** The plugin, the attestor and trusted-issuer registry contracts, the
+> FireFly event path and the reference verifier bridge ([`bridge/`](bridge/), on walt.id verifier-api2) are built and
+> tested, and real phone-wallet logins (Paradym on iOS, same device and cross device) have run end to end. It has not
+> had an external security review yet (milestone 1.0). See [Roadmap](#roadmap).
 
 ```mermaid
 flowchart LR
