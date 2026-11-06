@@ -3,6 +3,15 @@
 ## 0.1.0-dev (unreleased)
 
 - Auto-provisioned accounts take their display, first and last name from the disclosed `given_name` and `family_name` when the credential has no `name` claim, as SD-JWT VC identity credentials usually don't; the display name still falls back to the login, and the e-mail claim is still never used (#56).
+- ADR 0007, agent login with an application token (#75): how an agent proves who it is (its holder key) and who
+  it acts for (an `acts_for` claim from a trusted issuer, or a key linked here) with an SD-JWT VC and no browser;
+  the opaque, scoped, short-lived bearer token WordPress issues instead of a cookie, its storage, lifetime and
+  revocation; the unchanged on-chain attestation; threats; and the follow-up implementation issues. Docs only,
+  no code change.
+- The "Log in with a digital credential" button and the wallet link on wp-login.php keep their own text, background and
+  border colours, pinned as one set, so a theme or login customiser that recolours links or buttons cannot leave the
+  text unreadable; a theme recolours them through the `--bloclabs-ssi-button-*` custom properties. The focus ring
+  stays visible on any page background (#55).
 - Handoff labels use live PR draft/state data and an Actions-bot head checkpoint so replaced push jobs and delayed old handoffs cannot preserve an earlier approval (bloclabs-io/blocLabs-LearnPress-API-Extension#97).
 
 - Correct finality, webhook delivery, contract build and claim-retention documentation; add regression coverage for atomic state transitions, login ordering, cookie attributes and version-aware WordPress test installs (#33).
