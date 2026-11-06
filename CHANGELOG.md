@@ -8,6 +8,8 @@ First release. The first end-to-end logins with a real phone wallet (Paradym on 
 and cross device, including linking a credential to an existing account. Not externally reviewed yet (milestone 1.0).
 
 
+- Offer the existing SSI login block on WooCommerce My Account and checkout login forms, returning to the Woo page after login (#98).
+
 - Same-device login through the browser's Digital Credentials API (#76). With `BRIDGE_DC_API_ORIGINS` and
   `VERIFIER_PUBLIC_URL` set, the bridge opens a second walt.id session (`dc_api_openid4vp`, bound to the login
   pages' origins) next to the QR code's and returns it as `dc_api`: the `requests` for `navigator.credentials.get`

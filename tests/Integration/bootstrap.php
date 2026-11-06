@@ -72,6 +72,13 @@ require $bloclabs_ssi_tests_dir . '/includes/functions.php';
 tests_add_filter(
 	'muplugins_loaded',
 	static function () use ( $bloclabs_ssi_root ): void {
+		// Optional real WooCommerce coverage; no dependency in the default suite.
+		$woocommerce = getenv( 'WOOCOMMERCE_PLUGIN_FILE' );
+		if ( is_string( $woocommerce ) && '' !== $woocommerce ) {
+			require $woocommerce;
+			add_action( 'init', array( 'WC_Install', 'create_tables' ), -10 );
+		}
+
 		require $bloclabs_ssi_root . '/bloclabs-ssi-login.php';
 
 		// In place before the first rest_api_init, which is when the plugin caches the client.
