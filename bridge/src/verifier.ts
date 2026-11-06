@@ -183,7 +183,7 @@ export class VerifierClient {
 
 export type Evaluation =
   | { kind: 'undecided'; status: string }
-  | { kind: 'verified'; subjectId: string; issuer: string | null; claims: Record<string, unknown>; presentationHash: string }
+  | { kind: 'verified'; subjectId: string; issuer: string | null; vct: string | null; claims: Record<string, unknown>; presentationHash: string }
   | { kind: 'rejected'; presentationHash: string | null; failureType: string | null }
   /** A successful session the bridge cannot turn into a subject: never attested, logged as an error. */
   | { kind: 'inconsistent'; reason: string };
@@ -250,11 +250,14 @@ export function evaluateSession(session: Record<string, unknown>, query: QueryDe
   const issuer = typeof credential['issuer'] === 'string' && credential['issuer'] !== ''
     ? credential['issuer']
     : typeof data['iss'] === 'string' ? data['iss'] : null;
+  // The credential type (SD-JWT VC `vct`), the second half of the trusted-issuer registry key.
+  const vct = typeof data['vct'] === 'string' && data['vct'] !== '' ? data['vct'] : null;
 
   return {
     kind: 'verified',
     subjectId,
     issuer,
+    vct,
     claims: selectClaims(data, credentialQuery.claims),
     presentationHash: presentationHash(vpToken),
   };

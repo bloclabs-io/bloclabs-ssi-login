@@ -31,6 +31,9 @@ services:
       # The address FireFly signs with. The contract owner must have authorised it (setVerifier).
       FIREFLY_SIGNING_KEY: "0x<verifier-signing-address>"
       # FIREFLY_AUTH_HEADER: "Bearer <token-of-the-authenticating-proxy-in-front-of-firefly>"
+      # The TrustedIssuerRegistry's FireFly API. Set it and every presented credential's issuer and
+      # type must be trusted on chain; the attempt fails closed when the registry cannot answer.
+      # FIREFLY_REGISTRY_API: "trusted-issuer-registry"
       BRIDGE_LOG_LEVEL: "info"
       # Same-device login through the browser's Digital Credentials API: the origin of every
       # login page (scheme, host and port, no path) and the verifier as browsers reach it.

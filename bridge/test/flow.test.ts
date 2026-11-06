@@ -9,14 +9,18 @@ import {
   duplicateKey,
   failedSession,
   HOLDER_JWK,
+  ISSUER,
   okOperation,
   QUERIES,
+  registryKey,
   requestBody,
+  type ScriptedAnswer,
   SD_JWT_PRESENTATION,
   SIGNING_KEY,
   sleep,
   startBridge,
   successfulSession,
+  VCT,
   type TestBridge,
 } from './helpers.js';
 
@@ -158,6 +162,8 @@ describe('presentation requests', () => {
     const invoke = t.firefly.invokes[0]!;
     assert.equal(invoke.path, '/api/v1/namespaces/default/apis/ssi-login-attestor/invoke/attest?confirm=true');
     assert.equal(invoke.headers['authorization'], 'Bearer firefly-proxy-token');
+    assert.equal(t.config.firefly.registryApiName, undefined, 'FIREFLY_REGISTRY_API is unset in this suite');
+    assert.equal(t.firefly.queries.length, 0, 'without FIREFLY_REGISTRY_API no registry is asked: the allowed-issuer policy decides alone');
     assert.deepEqual(invoke.body, {
       key: SIGNING_KEY,
       input: {
@@ -613,5 +619,157 @@ describe('Digital Credentials API', () => {
     assert.equal(await t.verifier.fireCallback(dcId), 404);
     assert.equal(await t.verifier.fireCallback(id), 404);
     t.clock.now = start;
+  });
+});
+
+describe('trusted-issuer registry', () => {
+  let t: TestBridge;
+  let counter = 0x10000;
+  const freshCorrelation = () => (counter++).toString(16).padStart(64, '0');
+  const QUERY_PATH = '/api/v1/namespaces/default/apis/trusted-issuer-registry/query/isTrusted';
+
+  before(async () => {
+    t = await startBridge({ FIREFLY_REGISTRY_API: 'trusted-issuer-registry', FIREFLY_AUTH_HEADER: 'Bearer firefly-proxy-token' });
+  });
+  after(async () => {
+    await t.close();
+  });
+  beforeEach(() => {
+    t.firefly.invokes.length = 0;
+    t.firefly.responses.length = 0;
+    t.firefly.queries.length = 0;
+    t.firefly.queryResponses.length = 0;
+    t.firefly.trusted.clear();
+  });
+
+  /** Opens a request, lets the wallet present `session` (a successful one by default) and waits for the bridge to settle it. */
+  async function present(session?: (id: string) => Record<string, unknown>): Promise<{ id: string; correlationId: string }> {
+    const body = requestBody({ correlation_id: freshCorrelation() }, t.clock.now);
+    const response = await t.call('POST', '/v1/presentation-requests', body);
+    assert.equal(response.status, 201, JSON.stringify(response.body));
+    const id = (response.body as { id: string }).id;
+    t.verifier.setSession(id, session ? session(id) : successfulSession(id));
+    assert.equal(await t.verifier.fireCallback(id), 202);
+    await t.bridge.idle();
+    return { id, correlationId: body['correlation_id'] as string };
+  }
+
+  it('asks the registry about the presented issuer and vct, and attests a trusted pair as verified', async () => {
+    t.firefly.trusted.add(registryKey(ISSUER, VCT));
+    const { id, correlationId } = await present();
+
+    assert.equal(t.firefly.queries.length, 1);
+    const query = t.firefly.queries[0]!;
+    assert.equal(query.path, QUERY_PATH);
+    assert.equal(query.headers['authorization'], 'Bearer firefly-proxy-token', 'the registry is behind the same proxy as the attestor');
+    assert.deepEqual(query.body, { input: { issuer: ISSUER, vct: VCT } }, 'a view call: no key, no idempotency key');
+
+    assert.equal(t.firefly.invokes.length, 1);
+    const input = t.firefly.invokes[0]!.body['input'] as Record<string, unknown>;
+    assert.equal(input['result'], 1);
+    assert.equal(input['correlationId'], '0x' + correlationId);
+    const result = await t.call('GET', `/v1/presentation-requests/${id}/result`);
+    assert.equal(result.status, 200);
+    assert.equal((result.body as { issuer: string }).issuer, ISSUER);
+  });
+
+  it('attests a rejection for a pair the registry does not trust, and serves no result', async () => {
+    t.firefly.trusted.add(registryKey(ISSUER, 'https://issuer.example.com/credentials/other'));
+    t.firefly.trusted.add(registryKey('did:web:other.example.com', VCT));
+    const { id, correlationId } = await present();
+
+    assert.equal(t.firefly.queries.length, 1, 'the exact pair is what counts');
+    assert.equal(t.firefly.invokes.length, 1, 'the refusal is attested');
+    assert.deepEqual(t.firefly.invokes[0]!.body['input'], {
+      correlationId: '0x' + correlationId,
+      result: 2,
+      subjectCommitment: '0x' + ZERO_HASH,
+      presentationHash: '0x' + presentationHash({ login: [SD_JWT_PRESENTATION] }),
+    });
+    const result = await t.call('GET', `/v1/presentation-requests/${id}/result`);
+    assert.equal(result.status, 404);
+    assert.deepEqual(result.body, { error: 'rejected' });
+    assert.ok(t.logs.some((line) => line.includes('"failure":"untrusted_issuer"')), 'the log names the reason');
+  });
+
+  it('fails closed when FireFly cannot answer the registry query: nothing is attested', async () => {
+    t.firefly.trusted.add(registryKey(ISSUER, VCT));
+    t.firefly.queryResponses.push(
+      () => ({ status: 503, body: { error: 'FF10284: simulated outage' } }),
+      () => ({ status: 502, body: 'bad gateway' }),
+      () => ({ status: 500, body: { error: 'FF10111: still down' } }),
+    );
+    const { id } = await present();
+
+    assert.equal(t.firefly.queries.length, 3, 'a transient failure is retried like an attestation, then given up on');
+    assert.equal(t.firefly.invokes.length, 0, 'no decision, no attestation');
+    const result = await t.call('GET', `/v1/presentation-requests/${id}/result`);
+    assert.equal(result.status, 404);
+    assert.deepEqual(result.body, { error: 'failed' });
+    assert.ok(t.logs.some((line) => line.includes('the trusted-issuer registry could not be asked')), 'the failure is logged as an error');
+  });
+
+  it('fails closed, without retrying, on an answer that is not a decision', async () => {
+    t.firefly.trusted.add(registryKey(ISSUER, VCT));
+    const answers: ScriptedAnswer[] = [
+      { status: 404, body: { error: 'FF10109: Not found' } },
+      { status: 200, body: { output: 'true' } },
+      { status: 200, body: { output: 1 } },
+      { status: 200, body: {} },
+      { status: 200, body: 'not json' },
+    ];
+    for (const answer of answers) {
+      t.firefly.queries.length = 0;
+      t.firefly.queryResponses.push(() => answer);
+      const { id } = await present();
+      assert.equal(t.firefly.queries.length, 1, `${JSON.stringify(answer)} is not retried`);
+      assert.equal(t.firefly.invokes.length, 0, `${JSON.stringify(answer)} attests nothing`);
+      assert.deepEqual((await t.call('GET', `/v1/presentation-requests/${id}/result`)).body, { error: 'failed' });
+    }
+  });
+
+  it('retries a transient registry failure and then decides', async () => {
+    t.firefly.trusted.add(registryKey(ISSUER, VCT));
+    t.firefly.queryResponses.push(() => ({ status: 503, body: { error: 'FF10284: simulated outage' } }));
+    const { id } = await present();
+    assert.equal(t.firefly.queries.length, 2);
+    assert.equal(t.firefly.invokes.length, 1);
+    assert.equal((t.firefly.invokes[0]!.body['input'] as Record<string, unknown>)['result'], 1);
+    assert.equal((await t.call('GET', `/v1/presentation-requests/${id}/result`)).status, 200);
+  });
+
+  it('does not ask the registry about a presentation the verifier already rejected', async () => {
+    const { id } = await present((requestId) => failedSession(requestId));
+    assert.equal(t.firefly.queries.length, 0);
+    assert.equal(t.firefly.invokes.length, 1);
+    assert.equal((t.firefly.invokes[0]!.body['input'] as Record<string, unknown>)['result'], 2);
+    assert.deepEqual((await t.call('GET', `/v1/presentation-requests/${id}/result`)).body, { error: 'rejected' });
+  });
+
+  it('rejects a credential that names no issuer or no vct without asking', async () => {
+    t.firefly.trusted.add(registryKey(ISSUER, VCT));
+    const noVct = await present((requestId) => successfulSession(requestId, { credentialData: credentialData({ vct: undefined }) }));
+    assert.equal(t.firefly.queries.length, 0, 'nothing to look up');
+    assert.equal((t.firefly.invokes[0]!.body['input'] as Record<string, unknown>)['result'], 2);
+    assert.deepEqual((await t.call('GET', `/v1/presentation-requests/${noVct.id}/result`)).body, { error: 'rejected' });
+
+    t.firefly.invokes.length = 0;
+    const noIssuer = await present((requestId) => {
+      const session = successfulSession(requestId, { credentialData: credentialData({ iss: undefined }) });
+      const presented = (session['presented_credentials'] as Record<string, Array<Record<string, unknown>>>)['login']![0]!;
+      presented['issuer'] = null;
+      return session;
+    });
+    assert.equal(t.firefly.queries.length, 0);
+    assert.equal((t.firefly.invokes[0]!.body['input'] as Record<string, unknown>)['result'], 2);
+    assert.deepEqual((await t.call('GET', `/v1/presentation-requests/${noIssuer.id}/result`)).body, { error: 'rejected' });
+  });
+
+  it('never logs the issuer or the vct', () => {
+    const output = t.logs.join('\n');
+    assert.ok(output.includes('trusted-issuer registry answered'), 'the registry decisions above were logged');
+    assert.equal(output.includes(ISSUER), false);
+    assert.equal(output.includes(VCT), false);
+    assert.equal(output.includes('issuer.example.com'), false);
   });
 });

@@ -48,6 +48,13 @@ export interface FireFlyConfig {
   signingKey: string;
   /** Optional `Authorization` header for an authenticating proxy in front of FireFly. */
   authHeader?: string;
+  /**
+   * The contract API name of the on-chain `TrustedIssuerRegistry` (`FIREFLY_REGISTRY_API`).
+   * When set, the bridge asks `isTrusted(issuer, vct)` for every presented credential
+   * before it attests, and fails closed when the registry cannot answer. Unset: the
+   * verifier's `allowed-issuer` policy is the only issuer check.
+   */
+  registryApiName?: string;
 }
 
 /**
@@ -111,6 +118,10 @@ export function loadConfig(env: NodeJS.ProcessEnv): Config {
   const fireflyAuth = env['FIREFLY_AUTH_HEADER']?.trim();
   if (fireflyAuth) {
     firefly.authHeader = fireflyAuth;
+  }
+  const registryApiName = env['FIREFLY_REGISTRY_API']?.trim();
+  if (registryApiName) {
+    firefly.registryApiName = registryApiName;
   }
 
   return {
