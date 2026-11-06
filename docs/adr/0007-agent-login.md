@@ -207,15 +207,21 @@ cookie; it is a header or nothing, so no cross-site page can attach it and no no
 
 **Scope.** Scope names map to capability sets. 0.4 defines two: `read` (`read`) and `content` (`read`,
 `edit_posts`, `edit_published_posts`, `publish_posts`, `delete_posts`, `upload_files`); `bloclabs_ssi_agent_scopes`
-adds a site's own. A request authenticated by a token is confined by two filters:
+adds a site's own. A request authenticated by a token is confined in `map_meta_cap`, with `user_has_cap` as a
+second layer:
 
-- `user_has_cap` intersects the user's capabilities with the scope's. The intersection can only narrow: a scope
-  never grants what the account lacks, and a demoted account's agents are demoted with it, on their next request.
-- `map_meta_cap` adds `do_not_allow` to the account's self-service capabilities: `edit_user`, `delete_user`,
+- `map_meta_cap` is the enforcement. For the token's user it answers `do_not_allow` for every primitive capability
+  the scope does not list, and for the account's self-service meta capabilities: `edit_user`, `delete_user`,
   `promote_user` and the Application Password capabilities (`create_app_password`, `list_app_passwords`,
-  `read_app_password`, `edit_app_password`, `delete_app_password`, `delete_app_passwords`). Without this an agent
-  with any scope could change the principal's password or e-mail, or mint an unscoped, non-expiring Application
-  Password, because WordPress lets a user edit their own profile with no primitive capability to intersect.
+  `read_app_password`, `edit_app_password`, `delete_app_password`, `delete_app_passwords`). Without the latter an
+  agent with any scope could change the principal's password or e-mail, or mint an unscoped, non-expiring
+  Application Password, because WordPress lets a user edit their own profile with no primitive capability to
+  check. It has to be this filter, not `user_has_cap`: on multisite `WP_User::has_cap()` grants a super
+  administrator everything before `user_has_cap` runs, and only a `do_not_allow` from `map_meta_cap` stops it, so
+  an agent acting for a super administrator is confined by this filter alone.
+- `user_has_cap` intersects the user's capabilities with the scope's for everyone else. The intersection can only
+  narrow: a scope never grants what the account lacks, and a demoted account's agents are demoted with it, on
+  their next request.
 
 No scope may ever contain what `UserResolver::safe_role()` refuses (`manage_options`, `edit_users`,
 `promote_users`), nor `create_users`, `delete_users`, `unfiltered_html`, `unfiltered_upload`, `install_plugins`,
@@ -276,7 +282,7 @@ Numbered apart from [SECURITY-MODEL.md](../SECURITY-MODEL.md); the implementatio
 | A1 | A stolen token (an agent's logs, environment or memory). | Opaque, HTTPS-only, header-only; a scope that cannot reach the account's own settings; a lifetime of minutes to a day; revocation by the principal, an administrator or the agent; hashed at rest, so a database dump holds no usable token; `last_used_at` on the principal's list. | `TokenIssuer`, bearer filter, profile screen |
 | A2 | Prompt injection: an attacker opens an agent attempt and feeds its `wallet_url` to the victim's agent, which presents the credential; the attacker, holding the attempt secret, gets the token. The agent-side form of the cross-device relay (threat 1). | The protocol cannot prevent it, as it cannot for people. The agent presents only to the request its own `/agent/initiate` returned and checks the verifier's identity in the signed request; the token is scoped and short-lived; the principal's list shows every token; the chain shows every presentation the agent made. | Agent client, bridge (signed requests), profile screen |
 | A3 | A trusted issuer, or a compromised one, delegates any linked account to any agent. | The registry pins (issuer, `vct`); a site should run its own agent-credential issuer; delegation needs the principal's opt-in; every delegated token is listed and revocable; the login filters still run. | ADR 0006, `TokenIssuer`, profile screen |
-| A4 | Scope escalation: using the token to change the principal's password or e-mail, mint an Application Password, or reach capabilities the scope does not list. | `map_meta_cap` denies the self-service capabilities; `user_has_cap` intersects with the scope; the denylist bars administrative capabilities from any scope. | Bearer filter |
+| A4 | Scope escalation: using the token to change the principal's password or e-mail, mint an Application Password, or reach capabilities the scope does not list, including through a multisite super administrator, whom `has_cap()` grants everything unless `map_meta_cap` says `do_not_allow`. | `map_meta_cap` answers `do_not_allow` for every capability outside the scope and for the self-service capabilities, which binds super administrators too; `user_has_cap` intersects with the scope as a second layer; the denylist bars administrative capabilities from any scope. | Bearer filter |
 | A5 | Completing an agent attempt through the browser route, or a browser attempt through the agent route. | `kind` on the attempt; each route refuses the other's attempts with 404. | `BrowserController`, agent controllers |
 | A6 | Issuing two tokens for one attestation, or a token for a consumed attempt. | Compare-and-set consumption and the insert in the same request; `consumed` is terminal (threat 5). | `AttemptRepository::transition()` |
 | A7 | Guessing an attempt to poll or complete another agent's login. | 128-bit `public_id` plus the 256-bit attempt secret in a header; unknown and foreign attempts both answer 404 (threat 2). | `HeaderBinding` |
@@ -316,8 +322,9 @@ One pull request each, in this order; 5 can run in parallel with 1–4.
    (`acts_for`, own key, never provision, opt-in), the login filters, the scope intersection, the token format and
    the one-token-per-attestation rule. Files: `src/Login/`, `src/Identity/`, `src/Config/Settings.php`, tests.
 4. **Bearer authentication and scope enforcement.** The `determine_current_user`, `rest_authentication_errors`,
-   `user_has_cap` and `map_meta_cap` filters, the denylist, HTTPS and REST-only checks, `last_used_at`, the refusal
-   action. Files: `src/Auth/` (new), tests for every denied capability in A4.
+   `map_meta_cap` and `user_has_cap` filters, the denylist, HTTPS and REST-only checks, `last_used_at`, the refusal
+   action. Files: `src/Auth/` (new), tests for every denied capability in A4, run for a multisite super
+   administrator as well as an ordinary account.
 5. **Bridge: the agent query and the credential's expiry.** The `agent` query profile and its start-up checks,
    `expires_at` in the result route, the registry pair (issuer, `vct`) for agent credentials once #73 is in.
    Files: `bridge/src/`, `bridge/README.md`, `docs/BRIDGE-API.md`, bridge tests.
