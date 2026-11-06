@@ -2,6 +2,10 @@
 
 ## 0.1.0-dev (unreleased)
 
+- Bridge: with `FIREFLY_REGISTRY_API` set to the `TrustedIssuerRegistry` contract's FireFly API, every presented
+  credential's issuer and `vct` are checked on chain (`isTrusted`) before the decision is attested. An untrusted pair
+  is attested as a rejection (`result = 2`); when FireFly cannot answer, the attempt fails closed and nothing is
+  attested. Unset, the walt.id `allowed-issuer` policy decides alone, as before (#73).
 - ADR 0007, agent login with an application token (#75): how an agent proves who it is (its holder key) and who
   it acts for (an `acts_for` claim from a trusted issuer, or a key linked here) with an SD-JWT VC and no browser;
   the opaque, scoped, short-lived bearer token WordPress issues instead of a cookie, its storage, lifetime and
