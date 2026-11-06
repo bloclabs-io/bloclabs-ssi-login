@@ -27,6 +27,46 @@
 	width: 100%;
 }
 
+/*
+ * The start button and the wallet link keep their own colours (#55). WordPress's `.button` sets the
+ * text colour and the background in separate declarations, so a theme or login customiser that
+ * restyles one of them on the login page (a brand background on `.button`, a link colour on `a`)
+ * leaves the other and the text can end up unreadable. Text, background and border are pinned here
+ * as one set, with !important so that no later or more specific login-page rule can split them
+ * again. A theme that wants the buttons in its own colours sets the custom properties on any
+ * ancestor, for example `body.login { --bloclabs-ssi-button-color: #fff; }`, which keeps the set
+ * together. The defaults are WordPress's secondary button: 4.82:1 at rest and 8.05:1 on hover and
+ * focus, against the 4.5:1 that WCAG AA asks of text.
+ */
+#bloclabs-ssi .bloclabs-ssi__start,
+#bloclabs-ssi .bloclabs-ssi__open {
+	color: var(--bloclabs-ssi-button-color, #2271b1) !important;
+	background: var(--bloclabs-ssi-button-background, #f6f7f7) !important;
+	border-color: var(--bloclabs-ssi-button-color, #2271b1) !important;
+	text-shadow: none !important;
+}
+
+#bloclabs-ssi .bloclabs-ssi__start:hover,
+#bloclabs-ssi .bloclabs-ssi__start:focus,
+#bloclabs-ssi .bloclabs-ssi__open:hover,
+#bloclabs-ssi .bloclabs-ssi__open:focus {
+	color: var(--bloclabs-ssi-button-hover-color, #0a4b78) !important;
+	background: var(--bloclabs-ssi-button-hover-background, #f0f0f1) !important;
+	border-color: var(--bloclabs-ssi-button-hover-color, #0a4b78) !important;
+}
+
+/*
+ * A focus ring the login page cannot remove: an outline in the text colour, outside the button,
+ * over a halo in the button's own background, so the ring has an edge whatever the page's
+ * background is. Forced-colours mode draws the outline in its own colours.
+ */
+#bloclabs-ssi .bloclabs-ssi__start:focus,
+#bloclabs-ssi .bloclabs-ssi__open:focus {
+	outline: 2px solid var(--bloclabs-ssi-button-hover-color, #0a4b78) !important;
+	outline-offset: 2px !important;
+	box-shadow: 0 0 0 2px var(--bloclabs-ssi-button-hover-background, #f0f0f1) !important;
+}
+
 .bloclabs-ssi__panel {
 	margin-top: 12px;
 }
