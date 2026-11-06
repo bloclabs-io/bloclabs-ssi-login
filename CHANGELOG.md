@@ -2,6 +2,11 @@
 
 ## 0.1.0-dev (unreleased)
 
+- ADR 0007, agent login with an application token (#75): how an agent proves who it is (its holder key) and who
+  it acts for (an `acts_for` claim from a trusted issuer, or a key linked here) with an SD-JWT VC and no browser;
+  the opaque, scoped, short-lived bearer token WordPress issues instead of a cookie, its storage, lifetime and
+  revocation; the unchanged on-chain attestation; threats; and the follow-up implementation issues. Docs only,
+  no code change.
 - The "Log in with a digital credential" button and the wallet link on wp-login.php keep their own text, background and
   border colours, pinned as one set, so a theme or login customiser that recolours links or buttons cannot leave the
   text unreadable; a theme recolours them through the `--bloclabs-ssi-button-*` custom properties. The focus ring
