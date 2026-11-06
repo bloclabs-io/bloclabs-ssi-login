@@ -75,7 +75,7 @@ function bloclabs_ssi_demo_template( string $template ): string {
 		return $template;
 	}
 	if ( is_front_page() || is_home() ) {
-		return __DIR__ . '/front-page.php';
+		return __DIR__ . '/bloclabs-demo/front-page.php';
 	}
 	return $template;
 }

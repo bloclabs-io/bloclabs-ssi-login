@@ -2,6 +2,10 @@
 /**
  * Demo home page. A signed-in wallet user is greeted by display name.
  *
+ * This file lives under a subdirectory of mu-plugins. WordPress includes
+ * every PHP file in the mu-plugins root on each request, so the template
+ * must not sit there or it would be printed during bootstrap.
+ *
  * @package BlocLabs\SsiLogin
  */
 

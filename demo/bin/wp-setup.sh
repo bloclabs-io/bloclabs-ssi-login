@@ -5,6 +5,15 @@
 set -euo pipefail
 cd /var/www/html
 
+# The image's wp-config.php reads WORDPRESS_DB_* from the environment on
+# every request. The WordPress container loads them; this one must too,
+# or WP-CLI talks to a host named mysql with the image's placeholder password.
+tr -d '\r' < /runtime/wordpress.env > /tmp/wordpress.env
+set -a
+# shellcheck disable=SC1091
+. /tmp/wordpress.env
+set +a
+
 strip() { tr -d '\r\n'; }
 
 if [[ ! -f /var/www/html/wp-config.php ]]; then
