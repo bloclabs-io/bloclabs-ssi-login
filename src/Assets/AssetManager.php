@@ -2,7 +2,7 @@
 /**
  * Registers and enqueues the login-screen assets.
  *
- * Nothing loads outside wp-login.php. The QR encoder is a vendored copy of
+ * Assets load on wp-login.php and the WooCommerce login pages only. The QR encoder is a vendored copy of
  * qrcode-generator (MIT), copied in by `npm run vendor`; without it the block
  * still offers the same-device wallet link.
  *
@@ -30,21 +30,23 @@ final class AssetManager {
 
 	public function __construct( private readonly Settings $settings ) {}
 
-	/** Keep browser REST requests on wp-login.php's origin, including scheme and port. */
-	public function rest_base(): string {
+	/** Keep browser REST requests on the login page's origin, including scheme and port. */
+	public function rest_base( bool $frontend = false ): string {
 		$rest = rest_url( Routes::NAMESPACE . '/' );
 		// Match the binding cookie's HTTPS policy when TLS terminates before PHP.
 		$scheme = $this->settings->site_is_https() ? 'https' : null;
-		$site   = site_url( '', $scheme );
+		$site   = $frontend ? home_url( '', $scheme ) : site_url( '', $scheme );
 		foreach ( array( PHP_URL_SCHEME, PHP_URL_HOST, PHP_URL_PORT ) as $part ) {
 			if ( wp_parse_url( $rest, $part ) !== wp_parse_url( $site, $part ) ) {
-				return site_url( 'index.php?rest_route=/' . Routes::NAMESPACE . '/', $scheme );
+				return $frontend
+					? home_url( 'index.php?rest_route=/' . Routes::NAMESPACE . '/', $scheme )
+					: site_url( 'index.php?rest_route=/' . Routes::NAMESPACE . '/', $scheme );
 			}
 		}
 		return $rest;
 	}
 
-	public function enqueue_login(): void {
+	public function enqueue_login( ?string $redirect = null, bool $frontend = false ): void {
 		$deps = array();
 		if ( is_readable( PLUGIN_DIR . '/assets/vendor/qrcode.js' ) ) {
 			wp_register_script( self::QR, plugins_url( 'assets/vendor/qrcode.js', PLUGIN_FILE ), array(), '1.4.4', array( 'in_footer' => true ) );
@@ -63,13 +65,13 @@ final class AssetManager {
 			)
 		);
 
-		$redirect = isset( $_REQUEST['redirect_to'] ) ? esc_url_raw( wp_unslash( (string) $_REQUEST['redirect_to'] ) ) : ''; // phpcs:ignore WordPress.Security.NonceVerification.Recommended -- read-only, re-validated server side.
+		$redirect ??= isset( $_REQUEST['redirect_to'] ) ? esc_url_raw( wp_unslash( (string) $_REQUEST['redirect_to'] ) ) : ''; // phpcs:ignore WordPress.Security.NonceVerification.Recommended -- read-only, re-validated server side.
 
 		wp_add_inline_script(
 			self::HANDLE,
 			'window.bloclabsSsi = ' . wp_json_encode(
 				array(
-					'restBase'    => esc_url_raw( $this->rest_base() ),
+					'restBase'    => esc_url_raw( $this->rest_base( $frontend ) ),
 					'token'       => PageToken::create(),
 					'tokenHeader' => BrowserController::TOKEN_HEADER,
 					'redirectTo'  => $redirect,

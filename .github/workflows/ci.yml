@@ -56,8 +56,13 @@ jobs:
         include:
           - name: Integration (WordPress)
             multisite: "0"
+            woo: ""
           - name: Integration (WordPress, multisite)
             multisite: "1"
+            woo: ""
+          - name: Integration (WordPress, WooCommerce 9.3.3)
+            multisite: "0"
+            woo: ${{ github.workspace }}/vendor/woocommerce/woocommerce.php
     services:
       mysql:
         image: mysql:8.0
@@ -78,6 +83,7 @@ jobs:
       WP_TESTS_DB_HOST: 127.0.0.1
       WP_VERSION: "6.6.10"
       WP_MULTISITE: ${{ matrix.multisite }}
+      WOOCOMMERCE_PLUGIN_FILE: ${{ matrix.woo }}
     steps:
       - uses: actions/checkout@v4
       - uses: shivammathur/setup-php@v2
@@ -88,6 +94,11 @@ jobs:
           tools: composer:v2
       - run: composer install --no-interaction --no-progress
       - run: bash tests/Shell/install-wordpress.sh
+      - name: Install optional WooCommerce fixture
+        if: matrix.woo != ''
+        run: |
+          curl -fsSL https://downloads.wordpress.org/plugin/woocommerce.9.3.3.zip -o /tmp/woocommerce.zip
+          unzip -q /tmp/woocommerce.zip -d vendor
       - run: composer test:integration
 
   bridge:
