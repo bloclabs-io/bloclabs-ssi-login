@@ -21,6 +21,10 @@ sequenceDiagram
     W->>V: OpenID4VP: request_uri, then direct_post vp_token
     V->>BR: POST /v1/verifier-callbacks/{id} (doorbell, per-request bearer token)
     BR->>V: GET /verification-session/{id}/info
+    opt FIREFLY_REGISTRY_API set
+        BR->>FF: POST /apis/trusted-issuer-registry/query/isTrusted {issuer, vct}
+        FF-->>BR: {output: true|false}, or no answer (attempt fails closed)
+    end
     BR->>FF: POST /apis/ssi-login-attestor/invoke/attest?confirm=true (idempotencyKey)
     FF-->>BR: operation confirmed
     Note over BR: only now is the result readable
@@ -39,14 +43,20 @@ sequenceDiagram
 3. **Reads the decision.** `SUCCESSFUL` means every presentation and credential policy passed (holder binding over the
    verifier's nonce and audience, issuer signature, and whatever `policies` the query adds, such as allowed issuers and
    status lists). `FAILED` is a rejection, including a wallet's OpenID4VP error response.
-4. **Computes the commitments.** `subject_id` is the holder key the presentation was bound to: the RFC 9278 thumbprint
+4. **Checks the issuer on chain** when `FIREFLY_REGISTRY_API` is set: `isTrusted(issuer, vct)` on the
+   `TrustedIssuerRegistry` contract, through its FireFly API, for the presented credential's `iss` and `vct`. A pair
+   the registry does not trust is attested as a rejection (`result = 2`), like a presentation walt.id refused. When
+   the registry cannot answer (FireFly unreachable, the API missing, an output that is not a boolean), the attempt
+   fails closed: nothing is attested and WordPress reads `failed`. A credential without `iss` or `vct` is untrusted
+   without a query. Unset, the verifier's `allowed-issuer` policy is the only issuer check.
+5. **Computes the commitments.** `subject_id` is the holder key the presentation was bound to: the RFC 9278 thumbprint
    URI of `cnf.jwk`, or the DID behind `cnf.kid`. `subjectCommitment = sha256(correlation_id ":" blinding_secret ":"
    subject_id)`, with the per-attempt secret WordPress sent and nobody else holds; `presentationHash = sha256(canonical
    JSON of the vp_token map)` (see BRIDGE-API.md).
-5. **Attests through FireFly** with `idempotencyKey = bloclabs-ssi-login:<correlation_id>`. A retry after a timeout or
+6. **Attests through FireFly** with `idempotencyKey = bloclabs-ssi-login:<correlation_id>`. A retry after a timeout or
    crash can never attest twice: FireFly answers `409 FF10431` with the earlier transaction, and the bridge reads that
    transaction's status instead. Rejections are attested with `result = 2` and zero commitments.
-6. **Serves the result** to WordPress only after FireFly accepted the attestation, for the attempt lifetime plus a
+7. **Serves the result** to WordPress only after FireFly accepted the attestation, for the attempt lifetime plus a
    minute, then deletes it. Claims are those at the DCQL claim paths the query asked for, nothing more.
 
 Nothing personal is logged: request ids, states, FireFly operation ids and error codes only.
@@ -78,7 +88,8 @@ Environment variables only.
 | `FIREFLY_NAMESPACE` | no | Default `default`. |
 | `FIREFLY_API_NAME` | no | The contract API name, default `ssi-login-attestor`. |
 | `FIREFLY_SIGNING_KEY` | yes | The address FireFly signs `attest` with; the contract owner must have authorised it. |
-| `FIREFLY_AUTH_HEADER` | no | `Authorization` header for an authenticating proxy in front of FireFly. |
+| `FIREFLY_AUTH_HEADER` | no | `Authorization` header for an authenticating proxy in front of FireFly. Sent on the registry query too. |
+| `FIREFLY_REGISTRY_API` | no | The FireFly API name of the `TrustedIssuerRegistry` contract (`trusted-issuer-registry` in docs/FIREFLY-FLOW.md), in the same namespace. When set, every presented credential's `(iss, vct)` must be trusted on chain (step 4 above); the attempt fails closed when the registry cannot answer. Unset: no on-chain check. |
 | `BRIDGE_QUERIES` | yes | JSON object of named queries (below). Must contain `default`. |
 | `BRIDGE_PORT` | no | Default `8090`. |
 | `BRIDGE_LISTEN_HOST` | no | Default `0.0.0.0`. |
@@ -94,7 +105,8 @@ because the subject and the claims are read from exactly one: list a single cred
 add one required `credential_sets` entry whose options each name one of them (the wallet then presents one of
 those); `multiple: true` is refused. Without `policies`, walt.id runs its defaults: KB-JWT signature, nonce,
 audience and `sd_hash` checks on the presentation, and the issuer signature on the credential. Add
-`allowed-issuer` and `credential-status` policies to pin the trusted issuers and check revocation:
+`allowed-issuer` and `credential-status` policies to pin the trusted issuers and check revocation (with
+`FIREFLY_REGISTRY_API` set, the on-chain registry is checked as well, so an issuer must pass both):
 
 ```json
 {
