@@ -2,6 +2,7 @@
 
 ## 0.1.0-dev (unreleased)
 
+- The Docker demo does not leave the registry owner key in the signer's stored directory. The signer rebuilds its wallet from the attestor key on every start, and drops an in-memory owner key when setup is no longer running (#67).
 - The Docker demo's registry owner is a separate key from the bridge's signing key. `setup.sh` loads that key into the signer only while it deploys the registry and calls `setIssuer`, then removes it, so the bridge can attest and cannot change the trust list (#67).
 - The Docker demo deploys `TrustedIssuerRegistry`, trusts the generated issuer for the member credential type, and sets the bridge's `FIREFLY_REGISTRY_API`, so login is checked on chain the way the current bridge requires. A setup that finds the FireFly API already published reuses that contract instead of deploying another one (#67).
 - One-command Docker demo under `demo/`: WordPress, FireFly v1.5.0, a Besu QBFT chain, the verifier bridge and walt.id 1.2.0 issuer, wallet and verifier. The issuer key is generated at first start and is not committed. Walkthrough in the README (#67).

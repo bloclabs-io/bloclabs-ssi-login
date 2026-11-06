@@ -58,10 +58,15 @@ services:
         condition: service_completed_successfully
       besu:
         condition: service_started
-    command: ["-f", "/runtime/ffsigner.yaml"]
+    entrypoint: ["/bin/sh", "/entrypoint.sh"]
+    tmpfs:
+      - /data
+      - /run
     volumes:
       - ./runtime:/runtime:ro
-      - ./signer:/data
+      - ./signer:/attest:ro
+      - ./bin/signer-entrypoint.sh:/entrypoint.sh:ro
+      - ./bin/signer-wallet.sh:/signer-wallet.sh:ro
     healthcheck:
       test:
         - CMD

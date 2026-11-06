@@ -8,6 +8,7 @@
  */
 
 import { readFileSync, writeFileSync } from 'node:fs';
+import { pathToFileURL } from 'node:url';
 
 const root = (process.env.FIREFLY_URL || 'http://firefly:5000').replace(/\/$/, '');
 const issuer = (process.env.ISSUER_URL || 'http://issuer.demo').replace(/\/$/, '');
@@ -211,36 +212,65 @@ async function ensureListener() {
 	}
 }
 
-async function attestor(signer) {
+/**
+ * The attestor is deployed by the bridge's signing key, which becomes its
+ * first verifier. The registry is deployed by a different key, which becomes
+ * its owner, and only that key is allowed to call setIssuer.
+ *
+ * @param {string} signer
+ * @param {string} owner
+ */
+export function demoSigningPlan(signer, owner) {
+	if (typeof signer !== 'string' || typeof owner !== 'string') {
+		throw new Error('missing signing key');
+	}
+	const attest = signer.trim();
+	const registryOwner = owner.trim();
+	if (attest === '' || registryOwner === '') {
+		throw new Error('missing signing key');
+	}
+	if (attest.toLowerCase() === registryOwner.toLowerCase()) {
+		throw new Error('registry owner must not be the bridge signing key');
+	}
+	return {
+		attestor: { key: attest, input: [attest] },
+		registry: { key: registryOwner, input: [] },
+		setIssuer(did, vct) {
+			return {
+				key: registryOwner,
+				input: { issuer: did, vct, trusted: true },
+			};
+		},
+	};
+}
+
+async function attestor(plan) {
 	const api = await getApi('ssi-login-attestor', 60);
 	let address = api?.location?.address || '';
 	let publishedInterface = api?.interface?.id || '';
 	if (!address) {
 		process.stdout.write('deploying the attestor\n');
-		address = await deployContract('SsiLoginAttestor', signer, [signer]);
+		address = await deployContract('SsiLoginAttestor', plan.attestor.key, plan.attestor.input);
 		const published = await publishApi('ssi-login-attestor', 'SsiLoginAttestor', address);
 		address = published.address;
 		publishedInterface = published.interfaceId;
 	}
 	const listenerId = await ensureListener();
-	return { address, interfaceId: publishedInterface, listenerId, signer };
+	return { address, interfaceId: publishedInterface, listenerId, signer: plan.attestor.key };
 }
 
-async function registry(owner, did) {
+async function registry(plan, did) {
 	const api = await getApi('trusted-issuer-registry', 10);
 	let address = api?.location?.address || '';
 	if (!address) {
 		process.stdout.write('deploying the trusted-issuer registry\n');
-		address = await deployContract('TrustedIssuerRegistry', owner, []);
+		address = await deployContract('TrustedIssuerRegistry', plan.registry.key, plan.registry.input);
 		address = (await publishApi('trusted-issuer-registry', 'TrustedIssuerRegistry', address)).address;
 	}
 	await call(`${ns('apis/trusted-issuer-registry/invoke/setIssuer')}?confirm=true`, {
 		method: 'POST',
 		headers: { 'content-type': 'application/json' },
-		body: JSON.stringify({
-			key: owner,
-			input: { issuer: did, vct: MEMBER_VCT, trusted: true },
-		}),
+		body: JSON.stringify(plan.setIssuer(did, MEMBER_VCT)),
 	}, 30);
 	process.stdout.write(`registry ${address}\n`);
 	return address;
@@ -264,17 +294,19 @@ async function offer() {
 	return url;
 }
 
-const signer = readRuntime('signer.address');
-const owner = readRuntime('registry-owner.address');
-if (owner.toLowerCase() === signer.toLowerCase()) {
-	throw new Error('registry owner must not be the bridge signing key');
+async function main() {
+	const plan = demoSigningPlan(readRuntime('signer.address'), readRuntime('registry-owner.address'));
+	const did = readRuntime('issuer.did');
+	const deployment = await attestor(plan);
+	deployment.registryAddress = await registry(plan, did);
+	deployment.registryOwner = plan.registry.key;
+	deployment.registryApi = 'trusted-issuer-registry';
+	writeFileSync(`${runtime}/deployment.json`, `${JSON.stringify(deployment, null, 2)}\n`);
+	process.stdout.write(`attestor ${deployment.address}\n`);
+	const url = await offer();
+	process.stdout.write(`offer ${url}\n`);
 }
-const did = readRuntime('issuer.did');
-const deployment = await attestor(signer);
-deployment.registryAddress = await registry(owner, did);
-deployment.registryOwner = owner;
-deployment.registryApi = 'trusted-issuer-registry';
-writeFileSync(`${runtime}/deployment.json`, `${JSON.stringify(deployment, null, 2)}\n`);
-process.stdout.write(`attestor ${deployment.address}\n`);
-const url = await offer();
-process.stdout.write(`offer ${url}\n`);
+
+if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
+	await main();
+}
