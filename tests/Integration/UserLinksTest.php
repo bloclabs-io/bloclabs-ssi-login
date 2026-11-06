@@ -317,6 +317,22 @@ final class UserLinksTest extends IntegrationTestCase {
 		$this->assertSame( $bea, Plugin::instance()->identities()->user_id_for( $this->subject_hash( 'did:example:bea-stays-linked' ) ) );
 	}
 
+	public function test_last_used_is_shown_in_the_site_timezone(): void {
+		$user_id = self::factory()->user->create( array( 'role' => 'subscriber' ) );
+		$this->link_subject( $user_id );
+		$this->stamp_last_used( $this->subject_hash(), '2026-11-01 15:04:05' );
+		update_option( 'timezone_string', '' );
+		update_option( 'gmt_offset', 2 );
+		update_option( 'date_format', 'Y-m-d' );
+		update_option( 'time_format', 'g:i a' );
+
+		wp_set_current_user( $this->manager() );
+		$html = $this->screen->render_column( '', UserLinksScreen::COLUMN, $user_id );
+
+		$this->assertStringContainsString( '2026-11-01 5:04 pm', $html );
+		$this->assertStringNotContainsString( '3:04 pm', $html );
+	}
+
 	public function test_on_multisite_a_site_administrator_cannot_unlink_and_another_site_can(): void {
 		if ( ! is_multisite() ) {
 			$this->markTestSkipped( 'The network-administrator rule is enforced against a real multisite in that job.' );
@@ -379,6 +395,26 @@ final class UserLinksTest extends IntegrationTestCase {
 		$this->assertNull( Plugin::instance()->identities()->user_id_for( $other_hash ) );
 		restore_current_blog();
 		$this->assertSame( $holder, Plugin::instance()->identities()->user_id_for( $this->subject_hash() ), 'the current site keeps its own link' );
+
+		$bare = self::factory()->blog->create();
+		add_user_to_blog( $bare, $holder, 'subscriber' );
+		set_current_screen( 'users-network' );
+		global $wpdb;
+		$wpdb->last_error = '';
+		$wpdb->suppress_errors( true );
+		try {
+			$skipped = $this->screen->render_column( '', UserLinksScreen::COLUMN, $holder );
+			$this->assertStringContainsString( 'did:web:issuer.example', $skipped );
+			$this->assertSame( '', $wpdb->last_error, 'a site without the plugin tables is skipped' );
+			$this->post_unlink( $holder, $bare );
+			$url = $this->screen->unlink_request();
+			$this->assertStringContainsString( 'bloclabs_ssi_unlinked=0', $url );
+			$this->assertSame( '', $wpdb->last_error );
+		} finally {
+			$wpdb->suppress_errors( false );
+			set_current_screen( 'front' );
+		}
+		$this->assertSame( $holder, Plugin::instance()->identities()->user_id_for( $this->subject_hash() ) );
 	}
 
 	private function manager(): int {

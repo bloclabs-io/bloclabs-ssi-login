@@ -2,7 +2,7 @@
 
 ## 0.1.0-dev (unreleased)
 
-- An administrator sees linked credentials (issuer and last used) on the Users screen and the user edit screen and can unlink them there. `wp bloclabs-ssi links list` and `wp bloclabs-ssi links unlink` do the same for this site. The list filter is `--login`, because WP-CLI reserves `--user` for the account that runs the command. Neither the screen nor the command prints a subject identifier or the full subject hash. On multisite only a network administrator can view or unlink (#69).
+- An administrator sees linked credentials (issuer and last used) on the Users screen and the user edit screen and can unlink them there. `wp bloclabs-ssi links list` and `wp bloclabs-ssi links unlink` do the same for this site. The list filter is `--login`, because WP-CLI reserves `--user` for the account that runs the command. Neither the screen nor the command prints a subject identifier or the full subject hash. Last used is shown in the site's timezone. On multisite only a network administrator can view or unlink, and the network Users screen skips a site where the plugin has no identity table (#69).
 - The "Log in with a digital credential" button and the wallet link on wp-login.php keep their own text, background and
   border colours, pinned as one set, so a theme or login customiser that recolours links or buttons cannot leave the
   text unreadable; a theme recolours them through the `--bloclabs-ssi-button-*` custom properties. The focus ring

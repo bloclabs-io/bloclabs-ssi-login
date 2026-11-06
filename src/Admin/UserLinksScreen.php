@@ -22,6 +22,7 @@ declare(strict_types=1);
 
 namespace BlocLabs\SsiLogin\Admin;
 
+use BlocLabs\SsiLogin\Database\Schema;
 use BlocLabs\SsiLogin\Identity\IdentityRepository;
 
 final class UserLinksScreen {
@@ -36,6 +37,13 @@ final class UserLinksScreen {
 	 * @var array<string, array{blog_id: int, user_id: int}>
 	 */
 	private array $forms = array();
+
+	/**
+	 * Whether the current request has already seen this site's identities table.
+	 *
+	 * @var array<int, bool>
+	 */
+	private array $installed = array();
 
 	private bool $forms_printed = false;
 
@@ -217,11 +225,15 @@ final class UserLinksScreen {
 			if ( ! current_user_can( 'edit_user', $user_id ) ) {
 				wp_die( esc_html__( 'Sorry, you are not allowed to unlink credentials for this account.', 'bloclabs-ssi-login' ), '', array( 'response' => 403 ) );
 			}
-			$had = $this->identities->links_for( $user_id );
-			if ( array() !== $had ) {
-				$this->identities->unlink_user( $user_id );
+			if ( ! $this->identities_installed() ) {
+				$flag = '0';
+			} else {
+				$had = $this->identities->links_for( $user_id );
+				if ( array() !== $had ) {
+					$this->identities->unlink_user( $user_id );
+				}
+				$flag = array() === $had ? '0' : '1';
 			}
-			$flag = array() === $had ? '0' : '1';
 		} finally {
 			if ( $switched ) {
 				restore_current_blog();
@@ -276,16 +288,45 @@ final class UserLinksScreen {
 	 */
 	private function links_on_blog( int $blog_id, int $user_id, int $current ): array {
 		if ( $blog_id === $current ) {
-			return $this->identities->links_for( $user_id );
+			return $this->links_if_installed( $user_id );
 		}
 		if ( ! switch_to_blog( $blog_id ) ) {
 			return array();
 		}
 		try {
-			return $this->identities->links_for( $user_id );
+			return $this->links_if_installed( $user_id );
 		} finally {
 			restore_current_blog();
 		}
+	}
+
+	/**
+	 * @return list<array{user_id: int, subject_label: string, issuer: string, created_at: string, last_login_at: string}>
+	 */
+	private function links_if_installed( int $user_id ): array {
+		if ( ! $this->identities_installed() ) {
+			return array();
+		}
+		return $this->identities->links_for( $user_id );
+	}
+
+	/**
+	 * True when this site has the identities table.
+	 *
+	 * Activation creates it for the current site only. The network Users screen
+	 * switches into every site an account belongs to, including sites where the
+	 * plugin was never activated, and those have nothing to query.
+	 */
+	private function identities_installed(): bool {
+		$blog_id = get_current_blog_id();
+		if ( isset( $this->installed[ $blog_id ] ) ) {
+			return $this->installed[ $blog_id ];
+		}
+		global $wpdb;
+		$table                       = Schema::identities_table();
+		$found                       = $wpdb->get_var( $wpdb->prepare( 'SHOW TABLES LIKE %s', $wpdb->esc_like( $table ) ) ); // phpcs:ignore WordPress.DB.DirectDatabaseQuery
+		$this->installed[ $blog_id ] = $table === $found;
+		return $this->installed[ $blog_id ];
 	}
 
 	private function render_links_markup( int $user_id, string $login ): string {
@@ -358,9 +399,14 @@ final class UserLinksScreen {
 		if ( '' === $mysql || str_starts_with( $mysql, '0000-00-00' ) ) {
 			return __( 'Never', 'bloclabs-ssi-login' );
 		}
-		$format    = trim( (string) get_option( 'date_format' ) . ' ' . (string) get_option( 'time_format' ) );
-		$formatted = mysql2date( '' !== $format ? $format : 'Y-m-d H:i:s', $mysql, true );
-		return is_string( $formatted ) && '' !== $formatted ? $formatted : $mysql;
+		// last_login_at is stored with gmdate(); mysql2date() would read that as local time.
+		$stored = date_create( $mysql, new \DateTimeZone( 'UTC' ) );
+		if ( false === $stored ) {
+			return $mysql;
+		}
+		$format = trim( (string) get_option( 'date_format' ) . ' ' . (string) get_option( 'time_format' ) );
+		$shown  = wp_date( '' !== $format ? $format : 'Y-m-d H:i:s', $stored->getTimestamp() );
+		return is_string( $shown ) && '' !== $shown ? $shown : $mysql;
 	}
 
 	private function assert_site( int $blog_id ): void {
