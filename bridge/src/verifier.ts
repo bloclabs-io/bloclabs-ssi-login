@@ -33,14 +33,33 @@ export interface SessionSetupOptions {
   webhookUrl: string;
   webhookToken: string;
   signedRequest?: boolean;
+  /**
+   * Where a wallet on the holder's own device sends the holder once it has
+   * presented (`return_url` of docs/BRIDGE-API.md): the cross-device session's
+   * `redirects`. Absent, the wallet gets no `redirect_uri` and the holder stays in it.
+   */
+  returnUrl?: string;
 }
 
 /**
- * The cross-device (QR code) flow. The verifier picks the OpenID4VP nonce and
- * state itself; WordPress's nonce is not used, docs/BRIDGE-API.md allows that.
+ * The cross-device (QR code) flow, which a wallet on the same device opens from
+ * the link as well. The verifier picks the OpenID4VP nonce and state itself;
+ * WordPress's nonce is not used, docs/BRIDGE-API.md allows that.
+ *
+ * With a return URL, walt.id answers the wallet's `direct_post` with
+ * `{"redirect_uri": <success_redirect_uri> + "&response_code=" + <its own random code>}`
+ * once the presentation passed (OpenID4VP 1.0 §8.2), and with the error redirect
+ * when it refused the presentation or the holder declined; a same-device wallet
+ * opens that URL in the browser, a wallet on another device has nowhere to open it
+ * and ignores it. Both lead back to the page that started the attempt, which reads
+ * the outcome from WordPress as it always did; the response code is not used.
  */
 export function buildSessionSetup(options: SessionSetupOptions): Record<string, unknown> {
-  return { flow_type: 'cross_device', core_flow: coreFlow(options) };
+  const setup: Record<string, unknown> = { flow_type: 'cross_device', core_flow: coreFlow(options) };
+  if (options.returnUrl !== undefined) {
+    setup['redirects'] = { success_redirect_uri: options.returnUrl, error_redirect_uri: options.returnUrl };
+  }
+  return setup;
 }
 
 /**
@@ -49,8 +68,9 @@ export function buildSessionSetup(options: SessionSetupOptions): Record<string, 
  * origins of the login pages instead of a response URI. walt.id takes the request
  * unsigned and the response in clear (`response_mode: dc_api`) unless its own
  * configuration says otherwise, and checks the holder binding against the origin.
+ * No `redirects`: the browser that asks the wallet is already on the page.
  */
-export function buildDcApiSessionSetup(options: SessionSetupOptions & { origins: string[] }): Record<string, unknown> {
+export function buildDcApiSessionSetup(options: Omit<SessionSetupOptions, 'returnUrl'> & { origins: string[] }): Record<string, unknown> {
   return { flow_type: 'dc_api_openid4vp', core_flow: coreFlow(options), expectedOrigins: options.origins };
 }
 

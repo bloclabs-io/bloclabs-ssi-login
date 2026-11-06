@@ -17,7 +17,7 @@
  */
 
 import type { Config, DcApiConfig, QueryDefinition } from './config.js';
-import { isRecord } from './config.js';
+import { isRecord, isSecureWebUrl } from './config.js';
 import { ZERO_HASH, constantTimeEqual, newRequestId, randomToken, subjectCommitment } from './crypto.js';
 import type { AttestInput, AttestOutcome, FireFlyClient } from './firefly.js';
 import { FireFlyError } from './firefly.js';
@@ -76,6 +76,7 @@ export interface CreatedRequest {
 
 const MAX_LIFETIME_MS = 24 * 60 * 60 * 1000;
 const MAX_NONCE_LENGTH = 512;
+const MAX_RETURN_URL_LENGTH = 2048;
 const DC_API_DEADLINE_MS = 2_000;
 
 export class Bridge {
@@ -135,6 +136,7 @@ export class Bridge {
     if (expiresAt - now > MAX_LIFETIME_MS) {
       throw new HttpError(400, 'invalid_request', 'expires_at is more than a day away');
     }
+    const returnUrl = parseReturnUrl(body['return_url']);
 
     if (!this.store.reserveCorrelation(correlationId)) {
       throw new HttpError(409, 'duplicate_correlation_id', 'This correlation_id was already used');
@@ -150,6 +152,7 @@ export class Bridge {
       webhookUrl: `${this.config.callbackUrl}/${id}`,
       webhookToken: callbackToken,
       signedRequest: this.config.verifierSignedRequest,
+      ...(returnUrl === undefined ? {} : { returnUrl }),
     });
 
     let created;
@@ -192,7 +195,8 @@ export class Bridge {
     // Stored before the request is read: reading it rings the callback, which must find the request.
     this.store.add(request);
     const dcApi = await this.dcApiOffer(request, dcApiDeadline);
-    this.log.info('presentation request opened', { id, query: queryName, expiresAt: new Date(expiresAt).toISOString(), dcApi: dcApi !== null });
+    // The return URL names the login attempt and is not logged, like every other attempt identifier of WordPress's.
+    this.log.info('presentation request opened', { id, query: queryName, expiresAt: new Date(expiresAt).toISOString(), dcApi: dcApi !== null, returnUrl: returnUrl !== undefined });
     return { id, wallet_url: created.walletUrl, dc_api: dcApi };
   }
 
@@ -531,4 +535,33 @@ export class Bridge {
       }
     }
   }
+}
+
+/**
+ * `return_url` of docs/BRIDGE-API.md: where a wallet on the holder's own device sends
+ * the holder once it has presented, or undefined when WordPress named none. The
+ * verifier hands it to the wallet as `redirect_uri` and the wallet opens it in the
+ * browser, so only an absolute web address is accepted: https, or plain http on
+ * localhost for a test stack (the rule of BRIDGE_DC_API_ORIGINS), without credentials.
+ * The URL is WordPress's own login or profile page naming the attempt; it binds
+ * nothing, WordPress's cookie binding does (docs/SECURITY-MODEL.md, threat 24).
+ */
+function parseReturnUrl(value: unknown): string | undefined {
+  if (value === undefined || value === null) {
+    return undefined;
+  }
+  const refused = new HttpError(400, 'invalid_request', 'return_url must be an absolute https URL without credentials (plain http on localhost only)');
+  if (typeof value !== 'string' || value === '' || value.length > MAX_RETURN_URL_LENGTH) {
+    throw refused;
+  }
+  let url: URL;
+  try {
+    url = new URL(value);
+  } catch {
+    throw refused;
+  }
+  if (!isSecureWebUrl(url) || url.username !== '' || url.password !== '') {
+    throw refused;
+  }
+  return url.href;
 }

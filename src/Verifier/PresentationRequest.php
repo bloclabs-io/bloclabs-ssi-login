@@ -13,10 +13,12 @@ final class PresentationRequest {
 
 	/**
 	 * @param string $correlation_id Echoed on chain in the LoginAttested event.
-	 * @param string $nonce           Offered as the OpenID4VP nonce; the verifier may use its own.
-	 * @param string $blinding_secret Per-attempt secret that blinds the subject commitment; never on chain.
-	 * @param string $query           Name of a credential query (DCQL) configured in the verifier.
-	 * @param int    $expires_at      Unix time after which the verifier must refuse responses.
+	 * @param string      $nonce           Offered as the OpenID4VP nonce; the verifier may use its own.
+	 * @param string      $blinding_secret Per-attempt secret that blinds the subject commitment; never on chain.
+	 * @param string      $query           Name of a credential query (DCQL) configured in the verifier.
+	 * @param int         $expires_at      Unix time after which the verifier must refuse responses.
+	 * @param string|null $return_url      Where a wallet on the holder's own device sends the holder afterwards:
+	 *                                     the page that started the attempt (Rest\ReturnUrl), or null for no return.
 	 */
 	public function __construct(
 		public readonly string $correlation_id,
@@ -24,18 +26,23 @@ final class PresentationRequest {
 		public readonly string $blinding_secret,
 		public readonly string $query,
 		public readonly int $expires_at,
+		public readonly ?string $return_url = null,
 	) {}
 
 	/**
 	 * @return array<string, scalar>
 	 */
 	public function to_array(): array {
-		return array(
+		$data = array(
 			'correlation_id'  => $this->correlation_id,
 			'nonce'           => $this->nonce,
 			'blinding_secret' => $this->blinding_secret,
 			'query'           => $this->query,
 			'expires_at'      => gmdate( 'Y-m-d\TH:i:s\Z', $this->expires_at ),
 		);
+		if ( null !== $this->return_url && '' !== $this->return_url ) {
+			$data['return_url'] = $this->return_url;
+		}
+		return $data;
 	}
 }

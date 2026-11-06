@@ -16,6 +16,7 @@ namespace BlocLabs\SsiLogin\Assets;
 use BlocLabs\SsiLogin\Config\Settings;
 use BlocLabs\SsiLogin\Rest\BrowserController;
 use BlocLabs\SsiLogin\Rest\PageToken;
+use BlocLabs\SsiLogin\Rest\ReturnUrl;
 use BlocLabs\SsiLogin\Rest\Routes;
 use BlocLabs\SsiLogin\Verifier\PresentationOffer;
 
@@ -76,12 +77,16 @@ final class AssetManager {
 					'tokenHeader' => BrowserController::TOKEN_HEADER,
 					'redirectTo'  => $redirect,
 					'schemes'     => PresentationOffer::wallet_schemes(),
+					// The query parameter a same-device wallet brings the holder back with (ReturnUrl).
+					'resumeParam' => ReturnUrl::PARAM,
 					'i18n'        => array(
 						'starting' => __( 'Preparing your request…', 'bloclabs-ssi-login' ),
 						'waiting'  => __( 'Waiting for your wallet…', 'bloclabs-ssi-login' ),
+						'resuming' => __( 'Checking what your wallet shared…', 'bloclabs-ssi-login' ),
 						'verified' => __( 'Verified. Logging you in…', 'bloclabs-ssi-login' ),
 						'failed'   => __( 'The credential was not accepted.', 'bloclabs-ssi-login' ),
 						'expired'  => __( 'The request expired. Start again.', 'bloclabs-ssi-login' ),
+						'unknown'  => __( 'This login request was not started in this browser, or it has expired. Start again.', 'bloclabs-ssi-login' ),
 						'error'    => __( 'Something went wrong. Please try again.', 'bloclabs-ssi-login' ),
 					),
 				)

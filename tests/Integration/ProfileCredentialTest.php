@@ -10,6 +10,7 @@ declare(strict_types=1);
 namespace BlocLabs\SsiLogin\Tests\Integration;
 
 use BlocLabs\SsiLogin\Plugin;
+use BlocLabs\SsiLogin\Rest\ReturnUrl;
 use BlocLabs\SsiLogin\Tests\Integration\Support\VerifierFake;
 use BlocLabs\SsiLogin\Verifier\VerifierException;
 
@@ -144,6 +145,24 @@ final class ProfileCredentialTest extends IntegrationTestCase {
 		ob_start();
 		$screen->render( get_userdata( self::factory()->user->create() ) );
 		$this->assertSame( '', ob_get_clean() );
+	}
+
+	/**
+	 * A link attempt sends a wallet on the holder's own device back to this site's
+	 * profile page, naming the attempt (#96); the session and the binding cookie
+	 * still decide who may complete it.
+	 */
+	public function test_a_link_attempt_returns_to_the_profile_page(): void {
+		update_option( 'home', 'https://login.example' );
+		update_option( 'siteurl', 'https://login.example' );
+		wp_set_current_user( self::factory()->user->create( array( 'role' => 'subscriber' ) ) );
+
+		$row = $this->start_link();
+
+		$this->assertSame(
+			'https://login.example/wp-admin/profile.php?' . ReturnUrl::PARAM . '=' . $row['public_id'],
+			VerifierFake::instance()->last_request?->return_url
+		);
 	}
 
 	public function test_expired_attempt_cannot_link(): void {

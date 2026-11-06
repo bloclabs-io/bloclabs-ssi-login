@@ -13,6 +13,7 @@ use BlocLabs\SsiLogin\Assets\AssetManager;
 use BlocLabs\SsiLogin\Plugin;
 use BlocLabs\SsiLogin\Rest\BrowserController;
 use BlocLabs\SsiLogin\Rest\PageToken;
+use BlocLabs\SsiLogin\Rest\ReturnUrl;
 use BlocLabs\SsiLogin\Verifier\PresentationOffer;
 
 use const BlocLabs\SsiLogin\PLUGIN_DIR;
@@ -47,10 +48,14 @@ final class ProfileScreen {
 					'token'       => PageToken::create(),
 					'nonce'       => wp_create_nonce( 'wp_rest' ),
 					'schemes'     => PresentationOffer::wallet_schemes(),
+					// The query parameter a same-device wallet brings the holder back with (ReturnUrl).
+					'resumeParam' => ReturnUrl::PARAM,
 					'i18n'        => array(
-						'waiting' => __( 'Waiting for your wallet…', 'bloclabs-ssi-login' ),
-						'error'   => __( 'The request could not be completed. Please start again.', 'bloclabs-ssi-login' ),
-						'confirm' => __( 'Unlink this credential? You will need another way to log in.', 'bloclabs-ssi-login' ),
+						'waiting'  => __( 'Waiting for your wallet…', 'bloclabs-ssi-login' ),
+						'resuming' => __( 'Checking what your wallet shared…', 'bloclabs-ssi-login' ),
+						'unknown'  => __( 'This request was not started in this browser, or it has expired. Start again.', 'bloclabs-ssi-login' ),
+						'error'    => __( 'The request could not be completed. Please start again.', 'bloclabs-ssi-login' ),
+						'confirm'  => __( 'Unlink this credential? You will need another way to log in.', 'bloclabs-ssi-login' ),
 					),
 				)
 			) . ';',

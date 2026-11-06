@@ -52,11 +52,12 @@ function page(options={}){
   return {ok:verifier.ok,status:verifier.status,json:async()=>verifier.body};
  };
  const credentials={calls:[],get(opts){this.calls.push(opts);return options.get?options.get(opts):Promise.resolve(ANSWER);}};
- const window={fetch,bloclabsSsi:{restBase:'https://example.test/api/',i18n:{starting:'starting',waiting:'waiting',error:'error'}},setTimeout:fn=>timers.push(fn),isSecureContext:options.secure!==false,location:{protocol:options.pageProtocol||'https:'},navigator:{credentials}};
+ const assigned=[],replaced=[];
+ const window={fetch,bloclabsSsi:{restBase:'https://example.test/api/',resumeParam:'bloclabs_ssi_attempt',i18n:{starting:'starting',waiting:'waiting',resuming:'resuming',verified:'verified',unknown:'unknown',failed:'failed',expired:'expired',error:'error'}},setTimeout:fn=>timers.push(fn),isSecureContext:options.secure!==false,location:{protocol:options.pageProtocol||'https:',href:options.href,assign:(url)=>assigned.push(url)},history:'history' in options?options.history:{state:null,replaceState(state,title,url){replaced.push(url);}},navigator:{credentials}};
  if(options.browser!==false) window.DigitalCredential=options.DigitalCredential||function DigitalCredential(){};
  vm.runInNewContext(source,{window,document:{getElementById:()=>root,createElement:()=>({})},fetch,URL,AbortController});
  const verifierPosts=()=>calls.filter(c=>!c.url.startsWith('https://example.test/api/'));
- return {elements,timers,calls,credentials,verifierPosts,window};
+ return {elements,timers,calls,credentials,verifierPosts,window,assigned,replaced};
 }
 const flush=()=>new Promise(setImmediate);
 // Objects built inside the script's realm have another Object.prototype: compare by value.
@@ -192,3 +193,94 @@ test('an answer that arrives after cancel is dropped',async()=>{
  await flush();
  assert.equal(p.verifierPosts().length,0,'nothing is posted for a cancelled attempt');
 });
+
+// --- The same-device return (issue #96) --------------------------------------------------------
+
+const ATTEMPT='a'.repeat(32);
+const RETURN_PAGE='https://example.test/wp-login.php?redirect_to=https%3A%2F%2Fexample.test%2Fwp-admin%2Fedit.php';
+
+test('finishes the attempt a wallet on this device sent the holder back to, and drops it from the address at once',async()=>{
+ const p=page({href:RETURN_PAGE+'&bloclabs_ssi_attempt='+ATTEMPT+'&response_code=c0ffee',wp:[{ok:true,status:200,body:{status:'verified'}},{ok:true,status:200,body:{redirect_to:'https://example.test/wp-admin/edit.php'}}]});
+ assert.deepEqual(p.replaced,[RETURN_PAGE],'the attempt and the verifier\'s response code leave the address before anything else');
+ assert.equal(p.elements.start.hidden,true,'no new request is offered');
+ assert.equal(p.elements.panel.hidden,false);
+ assert.equal(p.elements.cancel.disabled,false);
+ assert.equal(p.elements.qr.hidden,true);
+ assert.deepEqual(p.elements.qr.children,[]);
+ assert.equal(p.elements.open.hidden,true);
+ assert.equal(p.elements.hint.hidden,true);
+ assert.equal(p.elements.status.textContent,'resuming');
+ assert.equal(p.calls.length,0,'nothing is initiated: the attempt exists');
+ assert.equal(p.credentials.calls.length,0,'the wallet is not asked again');
+ assert.equal(p.timers.length,1,'the attempt is polled');
+ p.timers.shift()();
+ await flush();
+ assert.equal(p.calls[0].url,'https://example.test/api/status/'+ATTEMPT);
+ assert.equal(p.calls[0].init.credentials,'same-origin','the binding cookie decides, as for every poll');
+ assert.equal(p.elements.status.textContent,'verified');
+ assert.equal(p.calls[1].url,'https://example.test/api/complete');
+ assert.deepEqual(JSON.parse(p.calls[1].init.body),{attempt:ATTEMPT});
+ assert.deepEqual(p.assigned,['https://example.test/wp-admin/edit.php'],'logged in, and on to the redirect the attempt stored');
+});
+
+test('a returned attempt this browser does not hold says so and offers a fresh start',async()=>{
+ const p=page({href:'https://example.test/wp-login.php?bloclabs_ssi_attempt='+'b'.repeat(32),wp:[{ok:false,status:404,body:{code:'bloclabs_ssi_unknown',message:'Unknown login request.'}}]});
+ p.timers.shift()();
+ await flush();
+ assert.equal(p.elements.status.textContent,'unknown');
+ assert.equal(p.elements.start.hidden,false);
+ assert.equal(p.elements.open.hidden,true);
+ assert.equal(p.assigned.length,0);
+ assert.equal(p.timers.length,0,'nothing left to poll');
+ // A page that started its own attempt keeps the plain message for a lost binding.
+ const own=page({wp:[{ok:true,status:201,body:{wallet_url:WALLET,attempt:'a',dc_api:null}},{ok:false,status:404,body:{code:'bloclabs_ssi_unknown'}}]});
+ own.elements.start.click();
+ await flush();
+ own.timers.shift()();
+ await flush();
+ assert.equal(own.elements.status.textContent,'error');
+});
+
+test('a returned attempt the chain refused or that expired reads like any other',async()=>{
+ for(const [status,message] of [['failed','failed'],['expired','expired']]){
+  const p=page({href:'https://example.test/wp-login.php?bloclabs_ssi_attempt='+ATTEMPT,wp:[{ok:true,status:200,body:{status}}]});
+  p.timers.shift()();
+  await flush();
+  assert.equal(p.elements.status.textContent,message);
+  assert.equal(p.elements.start.hidden,false);
+ }
+});
+
+test('an address without a well-formed attempt starts nothing',async()=>{
+ const cases=[
+  ['https://example.test/wp-login.php',[]],
+  ['https://example.test/wp-login.php?redirect_to=x',[]],
+  ['https://example.test/wp-login.php?bloclabs_ssi_attempt=../x',['https://example.test/wp-login.php']],
+  ['https://example.test/wp-login.php?bloclabs_ssi_attempt='+'A'.repeat(32),['https://example.test/wp-login.php']],
+  ['https://example.test/wp-login.php?bloclabs_ssi_attempt=',['https://example.test/wp-login.php']],
+  [undefined,[]],
+ ];
+ for(const [href,replaced] of cases){
+  const p=page({href});
+  assert.deepEqual(p.replaced,replaced,String(href));
+  assert.equal(p.timers.length,0,`${href}: no polling`);
+  assert.equal(p.calls.length,0,`${href}: no request`);
+  assert.equal(p.elements.start.hidden,false,String(href));
+ }
+ // Without a history to rewrite, a well-formed attempt is not resumed either: the address would replay it.
+ const fixed=page({href:'https://example.test/wp-login.php?bloclabs_ssi_attempt='+ATTEMPT,history:null});
+ assert.equal(fixed.timers.length,0,'no polling without a history to drop the parameter from');
+ assert.equal(fixed.calls.length,0);
+ assert.equal(fixed.elements.start.hidden,false);
+});
+
+test('cancel during a returned attempt stops it',async()=>{
+ const p=page({href:'https://example.test/wp-login.php?bloclabs_ssi_attempt='+ATTEMPT});
+ p.elements.cancel.click();
+ assert.equal(p.elements.panel.hidden,true);
+ assert.equal(p.elements.start.hidden,false);
+ p.timers.shift()();
+ await flush();
+ assert.equal(p.calls.length,0,'the stale poller stopped');
+});
+

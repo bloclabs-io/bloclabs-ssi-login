@@ -2,6 +2,14 @@
 
 ## 0.4.0-dev (unreleased)
 
+- Same-device flow: the wallet sends the holder back to the browser after sharing (#96). WordPress names, per
+  attempt, the login or profile page it started on with the attempt's public id as `return_url`; the bridge passes
+  it to walt.id as the cross-device session's `redirects`, and the wallet opens it after its presentation
+  (OpenID4VP `redirect_uri`). The returned page drops the parameter from the address, polls the attempt this
+  browser already holds and completes it; the binding cookie is still required, so the address alone finishes
+  nothing, and the verifier's `response_code` is ignored. The QR code path, and sites served over plain `http`
+  (localhost aside), are unchanged. docs/BRIDGE-API.md defines the field.
+
 ## 0.3.0 (2026-11-06)
 
 First release. The first end-to-end logins with a real phone wallet (Paradym on iOS) ran on 2026-11-06, same device

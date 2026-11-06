@@ -4,6 +4,9 @@
  * initiate → ask the wallet (through the browser's Digital Credentials API
  * where it exists and the bridge offered a request, else a QR code and a
  * wallet link) → poll status → complete → redirect.
+ * A wallet opened through the link on this device sends the holder back to
+ * this page with the attempt in the address (ReturnUrl in PHP); the page
+ * then picks the attempt up at the polling step.
  * No framework, no build step. Server data is only ever set with
  * textContent or as a validated href, never as HTML.
  */
@@ -201,7 +204,11 @@
 		ui.qr.replaceChildren();
 	}
 
-	function poll( id, me, delay ) {
+	/**
+	 * @param {boolean} [resumed] The attempt came back with the holder from the wallet (resume): an
+	 *                            attempt this browser does not hold is then reported as such.
+	 */
+	function poll( id, me, delay, resumed ) {
 		window.setTimeout( () => {
 			if ( me !== run ) {
 				return;
@@ -218,16 +225,66 @@
 				}
 				const status = r.ok ? r.data.status : 'error';
 				if ( status === 'pending' ) {
-					poll( id, me, Math.min( 5000, Math.max( 1000, ( r.data.poll_after || 2 ) * 1000 ) ) );
+					poll( id, me, Math.min( 5000, Math.max( 1000, ( r.data.poll_after || 2 ) * 1000 ) ), resumed );
 				} else if ( status === 'verified' ) {
 					say( 'verified' );
 					complete( id, me );
 				} else {
-					say( status === 'expired' ? 'expired' : status === 'failed' ? 'failed' : 'error' );
+					say( status === 'expired' ? 'expired' : status === 'failed' ? 'failed' : resumed && r.status === 404 ? 'unknown' : 'error' );
 					ui.start.hidden = false;
 				}
-			} ).catch( () => me === run && poll( id, me, 4000 ) );
+			} ).catch( () => me === run && poll( id, me, 4000, resumed ) );
 		}, delay );
+	}
+
+	/**
+	 * The attempt a wallet on this device sent the holder back here to finish, as
+	 * ReturnUrl in PHP put it in the address, or null. The parameter is dropped from
+	 * the address at once, with the verifier's response code next to it, so that a
+	 * reload, the back button or a shared link does not replay it. The id alone
+	 * opens nothing: the status and complete routes still need this browser's
+	 * binding cookie, which the fetches carry as always.
+	 */
+	function resumeId() {
+		const history = window.history;
+		if ( ! cfg.resumeParam || ! window.location || ! history || typeof history.replaceState !== 'function' ) {
+			return null;
+		}
+		let url;
+		try {
+			url = new URL( window.location.href );
+		} catch ( e ) {
+			return null;
+		}
+		const id = url.searchParams.get( cfg.resumeParam );
+		if ( id === null ) {
+			return null;
+		}
+		url.searchParams.delete( cfg.resumeParam );
+		url.searchParams.delete( 'response_code' );
+		try {
+			history.replaceState( history.state, '', url.href );
+		} catch ( e ) {
+			// A history the page may not write: the address keeps the parameter, and the attempt its single use.
+		}
+		return /^[a-f0-9]{32}$/.test( id ) ? id : null;
+	}
+
+	/** Finishes an attempt this browser started and a wallet on this device answered: no new request, the outcome only. */
+	function resume( id ) {
+		const me = ++run;
+		ui.cancel.disabled = false;
+		ui.start.hidden = true;
+		ui.panel.hidden = false;
+		ui.qr.replaceChildren();
+		ui.qr.hidden = true;
+		ui.open.removeAttribute( 'href' );
+		ui.open.hidden = true;
+		if ( ui.hint ) {
+			ui.hint.hidden = true;
+		}
+		say( 'resuming' );
+		poll( id, me, 0, true );
 	}
 
 	function complete( id, me, tries ) {
@@ -304,4 +361,9 @@
 
 	ui.start.addEventListener( 'click', start );
 	ui.cancel.addEventListener( 'click', reset );
+
+	const returned = resumeId();
+	if ( returned ) {
+		resume( returned );
+	}
 }() );
