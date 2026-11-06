@@ -25,6 +25,9 @@ services:
       # How the verifier reaches the bridge; the request id is appended per session.
       BRIDGE_CALLBACK_URL: "http://bridge:8090/v1/verifier-callbacks"
       VERIFIER_URL: "http://verifier:7004"
+      # Unsigned mode (default). For phone wallets, generate the signed config as in README,
+      # set this to "true", and uncomment the single-file mount below.
+      VERIFIER_SIGNED_REQUEST: "false"
       FIREFLY_URL: "http://<firefly-core-host>:5000"
       FIREFLY_NAMESPACE: "default"
       FIREFLY_API_NAME: "ssi-login-attestor"
@@ -75,6 +78,8 @@ services:
     restart: unless-stopped
     volumes:
       - ./verifier:/waltid-verifier-api2/config:ro
+      # Signed mode: generated with --mode x509_san_dns (or x509_hash), kept outside git.
+      # - ./verifier/private/verifier-service.conf:/waltid-verifier-api2/config/verifier-service.conf:ro
     ports:
       # Bind to the host loopback and publish through a TLS reverse proxy as https://<verifier-public-host>.
       - "127.0.0.1:7004:7004"

@@ -131,6 +131,7 @@ export class Bridge {
       retainUntil: new Date(expiresAt + RESULT_GRACE_MS),
       webhookUrl: `${this.config.callbackUrl}/${id}`,
       webhookToken: callbackToken,
+      signedRequest: this.config.verifierSignedRequest,
     });
 
     let created;

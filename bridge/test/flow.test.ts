@@ -64,6 +64,7 @@ describe('presentation requests', () => {
     const setup = t.verifier.createCalls.at(-1)!;
     assert.equal(setup['flow_type'], 'cross_device');
     const core = setup['core_flow'] as Record<string, unknown>;
+    assert.equal(Object.hasOwn(core, 'signed_request'), false, 'unsigned mode is unchanged');
     assert.equal(core['sessionId'], created.id, 'the bridge chooses the session id so the callback URL can carry it');
     assert.deepEqual(core['dcql_query'], QUERIES.default.dcql_query);
     assert.deepEqual(core['policies'], QUERIES.default.policies);

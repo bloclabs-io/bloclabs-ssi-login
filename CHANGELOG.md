@@ -7,6 +7,7 @@
 - The Docker demo's registry owner is a separate key from the bridge's signing key. `setup.sh` loads that key into the signer only while it deploys the registry and calls `setIssuer`, then removes it, so the bridge can attest and cannot change the trust list (#67).
 - The Docker demo deploys `TrustedIssuerRegistry`, trusts the generated issuer for the member credential type, and sets the bridge's `FIREFLY_REGISTRY_API`, so login is checked on chain the way the current bridge requires. A setup that finds the FireFly API already published reuses that contract instead of deploying another one (#67).
 - One-command Docker demo under `demo/`: WordPress, FireFly v1.5.0, a Besu QBFT chain, the verifier bridge and walt.id 1.2.0 issuer, wallet and verifier. The issuer key is generated at first start and is not committed. Walkthrough in the README (#67).
+- Auto-provisioned accounts take their display, first and last name from the disclosed `given_name` and `family_name` when the credential has no `name` claim, as SD-JWT VC identity credentials usually don't; the display name still falls back to the login, and the e-mail claim is still never used (#56).
 - ADR 0006: issuer trust moves from the bridge's walt.id `allowed-issuer` policy to an owner-governed on-chain
   `TrustedIssuerRegistry` of `(issuer, vct)` pairs, which the bridge queries through FireFly before it attests, with
   what stays off chain (signatures, holder binding, revocation) and the migration; ARCHITECTURE.md and
@@ -24,6 +25,8 @@
   border colours, pinned as one set, so a theme or login customiser that recolours links or buttons cannot leave the
   text unreadable; a theme recolours them through the `--bloclabs-ssi-button-*` custom properties. The focus ring
   stays visible on any page background (#55).
+- Support signed walt.id authorization requests with `x509_san_dns` or `x509_hash` client identities, private PEM-to-config setup and a self-signed certificate smoke test that uses the default Docker host/context, including Docker Desktop (#72).
+- Link and unlink credentials from your own profile using account- and browser-bound, single-use verified attempts (#70).
 - Add the owner-governed TrustedIssuerRegistry for exact issuer/vct pairs, two-step ownership, executable contract tests in CI and FireFly setup instructions (#71).
 
 - Handoff labels use live PR draft/state data and an Actions-bot head checkpoint so replaced push jobs and delayed old handoffs cannot preserve an earlier approval (bloclabs-io/blocLabs-LearnPress-API-Extension#97).
