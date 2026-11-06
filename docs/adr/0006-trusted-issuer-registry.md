@@ -1,6 +1,6 @@
 # ADR 0006: Trusted issuers in an on-chain registry, read by the bridge through FireFly
 
-**Status:** accepted, 2026-11-06
+**Status:** accepted, 2026-11-06 (#74)
 
 ## Question
 
@@ -26,8 +26,8 @@ does a change leave behind, and what part of credential validation stays off cha
 - A FireFly contract API exposes a contract's `view` functions under `/apis/{name}/query/{method}`. A query is a read
   through the connector (`eth_call`): nothing is signed, nothing is written to the chain, so it leaves no per-login
   trace there.
-- The contract (#71, Codex) and the bridge check (#73, Fable) are built in parallel against one interface the code
-  owner fixed in advance, reproduced below. A change to it goes back to the code owner first.
+- The contract (#71) and the bridge check (#73) were built in parallel against one interface the code owner fixed
+  in advance, reproduced below, and both are on `main`. A change to the interface goes back to the code owner first.
 
 ## Options
 
@@ -43,7 +43,7 @@ does a change leave behind, and what part of credential validation stays off cha
 
 ### The contract
 
-`contracts/TrustedIssuerRegistry.sol` implements exactly the interface the code owner fixed for #71 and #73:
+`contracts/TrustedIssuerRegistry.sol` (#71) implements exactly the interface the code owner fixed for #71 and #73:
 
 ```solidity
 contract TrustedIssuerRegistry {
@@ -62,6 +62,8 @@ contract TrustedIssuerRegistry {
   withdraws trust without deleting history.
 - **Every change is an event.** `IssuerSet` records the pair, its new state and the caller's address, so the chain holds
   the whole history of the list, and a FireFly listener on it can alert an operator.
+- **Entries are public.** The event carries both strings verbatim, so the registry holds issuer identifiers and
+  credential types, which are policy, and never a holder identifier or a claim.
 - **Only the owner changes it,** with the same two-step ownership transfer as `SsiLoginAttestor`. The owner is an
   operator key held away from the bridge: the bridge's `FIREFLY_SIGNING_KEY` is never the registry owner, so a
   compromised bridge can still attest but cannot widen the trust list. WordPress holds no chain key at all.
@@ -75,14 +77,16 @@ When `FIREFLY_REGISTRY_API` is set (#73), the bridge asks `POST /apis/trusted-is
 attests:
 
 - **The pair comes from the presented credential,** after the verifier has checked its signature, holder binding and
-  validity: `iss` and `vct` of the credential as walt.id parsed it, never from the query configuration and never from
-  anything the wallet sent unsigned.
-- **Only a JSON `true` in `output` is trust.** `false`, anything else, or an answer the bridge cannot read, is an
-  untrusted pair: attested as a rejection (`result = 2`), exactly as a failed verifier policy is.
-- **FireFly unreachable, or answering an error, fails closed:** the bridge may retry a transient failure as it does for
-  `attest`, and if the check still cannot be made there is no attestation at all. The request fails in the bridge and
-  the attempt expires in WordPress. The bridge never attests `verified` for a credential whose issuer it could not
-  check, and never attests `rejected` for a credential nobody rejected.
+  validity: the credential's issuer and `vct` as walt.id parsed them, never from the query configuration and never
+  from anything the wallet sent unsigned. A credential that names no issuer or no `vct` cannot be in the registry, so
+  it is untrusted without a query.
+- **`true` is trust, `false` is an untrusted pair,** attested as a rejection (`result = 2`), exactly as a presentation
+  walt.id refused is.
+- **No answer fails closed.** An unreachable FireFly, an unknown API or an `output` that is not a boolean is not a
+  decision: the bridge retries a transient failure as it does for `attest`, and if the registry still cannot answer
+  there is no attestation at all. The bridge marks the request failed (its result route answers `failed`) and, with
+  nothing attested to deliver, the attempt expires in WordPress. The bridge never attests `verified` for a credential
+  whose issuer it could not check, and never attests `rejected` for a credential nobody rejected.
 - **When `FIREFLY_REGISTRY_API` is unset** the bridge behaves as in 0.2: issuer trust is whatever `allowed-issuer`
   policy the query carries, and nothing else.
 
@@ -101,17 +105,17 @@ keeps its commitments-only payload (ADR 0004).
 
 ### Migration from the `allowed-issuer` policy
 
-1. Deploy the registry and publish its FireFly API `trusted-issuer-registry`, following the attestor's steps in
-   [FIREFLY-FLOW.md](../FIREFLY-FLOW.md) "One-time setup" (#71 adds the registry's own). The deployer's key becomes
-   the owner; transfer ownership to the operator key that will govern the list when that is a different key.
-2. For every query in `BRIDGE_QUERIES`, call `setIssuer(issuer, vct, true)` for each issuer in its `allowed_issuer`
-   list and each `vct` in its `vct_values`. Check each pair with `isTrusted` through the FireFly query API.
+1. Deploy the registry and publish its FireFly API `trusted-issuer-registry`: steps 6 to 8 of
+   [FIREFLY-FLOW.md](../FIREFLY-FLOW.md) "One-time setup". The deployer's key becomes the owner; transfer ownership
+   to the operator key that will govern the list when that is a different key.
+2. For every query in `BRIDGE_QUERIES`, invoke `setIssuer(issuer, vct, true)` through that API for each issuer in its
+   `allowed_issuer` list and each `vct` in its `vct_values`. Check each pair with `isTrusted` through the query API.
 3. Set `FIREFLY_REGISTRY_API=trusted-issuer-registry` on the bridge and restart it. From then on every verified
    presentation is checked against the registry.
 4. Remove the `allowed-issuer` policy from the queries, so that the registry is the one place where issuer trust is
    set and a change there takes effect without redeploying the bridge. Keep `signature`, `expiration`, `not-before`
-   and `credential-status`: those are the checks the registry does not replace. Keeping `allowed-issuer` as well is
-   harmless, but then every change has to be made twice.
+   and `credential-status`: those are the checks the registry does not replace. With both set, an issuer must pass
+   both ([bridge/README.md](../../bridge/README.md)), which is harmless but means every change has to be made twice.
 
 Withdrawing trust (`setIssuer(…, false)`) stops new logins with that pair from the next presentation on. It does not
 end sessions already issued, and it does not unlink accounts linked through that issuer; the `identities` table keeps
@@ -132,7 +136,7 @@ the issuer, so an operator can find and unlink them.
 - The `issuer` string WordPress receives from the bridge is still authenticated HTTP data, not an on-chain fact
   ([ARCHITECTURE.md](../ARCHITECTURE.md), trust boundary 5). What the chain proves is narrower: with the registry on,
   a `LoginAttested` with `result = 1` was emitted only after the bridge found the credential's `(issuer, vct)` trusted.
-- Agent credentials (0.4, ADR 0007) are governed in the same registry: the issuers of agent credentials are set,
-  withdrawn and audited in one place.
+- Agent credentials ([ADR 0007](0007-agent-login.md)) are governed in the same registry: the issuers of agent
+  credentials are set, withdrawn and audited in one place.
 - Not decided here: a per-site trust list behind one bridge, a registry fed from an external trust list (OpenID
   Federation, an ETSI trusted list), and a UI or WP-CLI command to manage the registry. Each is a follow-up issue.
