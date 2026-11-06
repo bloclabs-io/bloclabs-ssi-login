@@ -1,0 +1,14 @@
+# Names only this Compose network can resolve. Nothing here is published
+# on the host: the wallet backend is what connects, not the browser.
+{
+	admin off
+	auto_https off
+}
+
+http://verifier.demo {
+	reverse_proxy verifier:7004
+}
+
+http://issuer.demo {
+	reverse_proxy issuer:7005
+}

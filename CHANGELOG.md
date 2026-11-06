@@ -2,6 +2,7 @@
 
 ## 0.1.0-dev (unreleased)
 
+- One-command Docker demo under `demo/`: WordPress, FireFly v1.5.0, a Besu QBFT chain, the verifier bridge and walt.id 1.2.0 issuer, wallet and verifier. The issuer key is generated at first start and is not committed. Walkthrough in the README (#67).
 - The "Log in with a digital credential" button and the wallet link on wp-login.php keep their own text, background and
   border colours, pinned as one set, so a theme or login customiser that recolours links or buttons cannot leave the
   text unreadable; a theme recolours them through the `--bloclabs-ssi-button-*` custom properties. The focus ring
