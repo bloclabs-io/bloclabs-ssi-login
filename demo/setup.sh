@@ -60,10 +60,11 @@ wait_http "http://127.0.0.1:5000/api/v1/status" "FireFly" "200"
 echo "Waiting for the issuer..."
 wait_http "http://issuer.demo/" "the issuer"
 
-echo "Compiling the attestor with solc 0.8.28 (Paris)..."
+echo "Compiling the attestor and the trusted-issuer registry with solc 0.8.28 (Paris)..."
 compiled="$(mktemp)"
 if ! docker run --rm -v "${PWD}/../contracts:/src:ro" ethereum/solc:0.8.28 \
-	--optimize --evm-version paris --combined-json abi,bin /src/SsiLoginAttestor.sol >"${compiled}"; then
+	--optimize --evm-version paris --combined-json abi,bin \
+	/src/SsiLoginAttestor.sol /src/TrustedIssuerRegistry.sol >"${compiled}"; then
 	rm -f "${compiled}"
 	exit 1
 fi
@@ -78,7 +79,7 @@ fi
 tr -d '\r' <"${compiled}" > runtime/contract.json
 rm -f "${compiled}"
 
-echo "Deploying the attestor and requesting a credential offer..."
+echo "Deploying the attestor and the trusted-issuer registry, then requesting a credential offer..."
 docker compose run --rm --no-deps --entrypoint node keys /opt/demo/deploy.mjs
 
 echo "Waiting for WordPress..."

@@ -1,5 +1,6 @@
 /**
- * After the stack is up: deploy the attestor if this FireFly has none,
+ * After the stack is up: deploy the attestor and the trusted-issuer registry
+ * when this FireFly does not already have them, trust the generated issuer,
  * then ask the issuer for a fresh credential offer.
  *
  * Talks to FireFly and the issuer by their Compose names. Run it with
@@ -64,49 +65,62 @@ function ns(path) {
 	return `${root}/api/v1/namespaces/${namespace}/${path}`;
 }
 
-function contractArtifact() {
+const MEMBER_VCT = 'http://issuer.demo/openid4vci/member';
+
+function contractArtifact(contractName) {
 	const raw = strip(readFileSync(`${runtime}/contract.json`, 'utf8'));
 	const parsed = JSON.parse(raw);
 	const contracts = parsed.contracts || {};
-	const key = Object.keys(contracts).find((name) => name.endsWith(':SsiLoginAttestor'));
+	const key = Object.keys(contracts).find((name) => name.endsWith(`:${contractName}`));
 	if (!key) {
-		throw new Error('solc output has no SsiLoginAttestor');
+		throw new Error(`solc output has no ${contractName}`);
 	}
 	const artifact = contracts[key];
 	const abi = typeof artifact.abi === 'string' ? JSON.parse(artifact.abi) : artifact.abi;
 	const bin = String(artifact.bin || '').replace(/^0x/, '');
 	if (!abi || !bin) {
-		throw new Error('solc output is missing the ABI or bytecode');
+		throw new Error(`solc output is missing the ABI or bytecode for ${contractName}`);
 	}
 	return { abi, bytecode: `0x${bin}` };
 }
 
-async function deployContract(signer) {
-	const { abi, bytecode } = contractArtifact();
+async function getApi(name, attempts = 10) {
+	try {
+		return await call(ns(`apis/${name}`), {}, attempts);
+	} catch (error) {
+		if (error.status === 404) {
+			return null;
+		}
+		throw error;
+	}
+}
+
+async function deployContract(contractName, signer, input) {
+	const { abi, bytecode } = contractArtifact(contractName);
 	const deployed = await call(`${ns('contracts/deploy')}?confirm=true`, {
 		method: 'POST',
 		headers: { 'content-type': 'application/json' },
 		body: JSON.stringify({
 			contract: bytecode,
 			definition: abi,
-			input: [signer],
+			input,
 			key: signer,
 		}),
 	}, 60);
 	const address = deployed?.output?.contractLocation?.address;
 	if (!address) {
-		throw new Error(`deploy did not return a contract address: ${JSON.stringify(deployed)}`);
+		throw new Error(`deploy of ${contractName} did not return a contract address: ${JSON.stringify(deployed)}`);
 	}
 	return address;
 }
 
-async function publish(signer, address) {
-	const { abi } = contractArtifact();
+async function interfaceId(contractName) {
+	const { abi } = contractArtifact(contractName);
 	let ffi = await call(ns('contracts/interfaces/generate'), {
 		method: 'POST',
 		headers: { 'content-type': 'application/json' },
 		body: JSON.stringify({
-			name: 'SsiLoginAttestor',
+			name: contractName,
 			version: '1.0',
 			input: { abi },
 		}),
@@ -122,70 +136,114 @@ async function publish(signer, address) {
 			throw error;
 		}
 		const list = await call(ns('contracts/interfaces'));
-		const found = (Array.isArray(list) ? list : []).find((item) => item.name === 'SsiLoginAttestor');
+		const found = (Array.isArray(list) ? list : []).find((item) => item.name === contractName);
 		if (!found) {
 			throw error;
 		}
 		ffi = found;
 	}
 	if (!ffi.id) {
-		throw new Error('FireFly did not return an interface id');
+		throw new Error(`FireFly did not return an interface id for ${contractName}`);
 	}
+	return ffi.id;
+}
+
+/**
+ * Publishes the API, or returns the address of the API that already has this
+ * name. A second contract must not replace that address: the listener and
+ * WordPress stay pointed at the first one.
+ */
+async function publishApi(name, contractName, address) {
+	const id = await interfaceId(contractName);
 	try {
 		await call(`${ns('apis')}?confirm=true`, {
 			method: 'POST',
 			headers: { 'content-type': 'application/json' },
 			body: JSON.stringify({
-				name: 'ssi-login-attestor',
-				interface: { id: ffi.id },
+				name,
+				interface: { id },
 				location: { address },
 			}),
 		});
+		return { address, interfaceId: id };
 	} catch (error) {
 		if (error.status !== 409) {
 			throw error;
 		}
+		const current = await getApi(name, 5);
+		const existing = current?.location?.address;
+		if (!existing) {
+			throw error;
+		}
+		return { address: existing, interfaceId: current.interface?.id || id };
 	}
-	let listener;
+}
+
+function loginListener(listeners) {
+	return (Array.isArray(listeners) ? listeners : []).find((item) => item.event === 'LoginAttested' || item.name === 'LoginAttested');
+}
+
+async function ensureListener() {
+	const listed = await call(ns('apis/ssi-login-attestor/listeners'), {}, 10);
+	const found = loginListener(listed);
+	if (found?.id) {
+		return found.id;
+	}
 	try {
-		listener = await call(`${ns('apis/ssi-login-attestor/listeners/LoginAttested')}?confirm=true`, {
+		const created = await call(`${ns('apis/ssi-login-attestor/listeners/LoginAttested')}?confirm=true`, {
 			method: 'POST',
 			headers: { 'content-type': 'application/json' },
 			body: JSON.stringify({ topic: 'ssi-login', options: { firstEvent: 'newest' } }),
 		});
+		if (!created?.id) {
+			throw new Error('FireFly did not return a listener id');
+		}
+		return created.id;
 	} catch (error) {
 		if (error.status !== 409) {
 			throw error;
 		}
-		const listeners = await call(ns('apis/ssi-login-attestor/listeners'));
-		listener = (Array.isArray(listeners) ? listeners : []).find((item) => item.event === 'LoginAttested' || item.name === 'LoginAttested');
-	}
-	if (!listener?.id) {
-		throw new Error('FireFly did not return a listener id');
-	}
-	return { address, interfaceId: ffi.id, listenerId: listener.id, signer };
-}
-
-async function existing() {
-	try {
-		const api = await call(ns('apis/ssi-login-attestor'), {}, 60);
-		const address = api?.location?.address;
-		const listeners = await call(ns('apis/ssi-login-attestor/listeners'), {}, 10);
-		const listener = (Array.isArray(listeners) ? listeners : []).find((item) => item.event === 'LoginAttested' || item.name === 'LoginAttested');
-		if (address && listener?.id) {
-			return {
-				address,
-				interfaceId: api.interface?.id || '',
-				listenerId: listener.id,
-				signer: readRuntime('signer.address'),
-			};
-		}
-	} catch (error) {
-		if (error.status && error.status !== 404) {
+		const again = loginListener(await call(ns('apis/ssi-login-attestor/listeners')));
+		if (!again?.id) {
 			throw error;
 		}
+		return again.id;
 	}
-	return null;
+}
+
+async function attestor(signer) {
+	const api = await getApi('ssi-login-attestor', 60);
+	let address = api?.location?.address || '';
+	let publishedInterface = api?.interface?.id || '';
+	if (!address) {
+		process.stdout.write('deploying the attestor\n');
+		address = await deployContract('SsiLoginAttestor', signer, [signer]);
+		const published = await publishApi('ssi-login-attestor', 'SsiLoginAttestor', address);
+		address = published.address;
+		publishedInterface = published.interfaceId;
+	}
+	const listenerId = await ensureListener();
+	return { address, interfaceId: publishedInterface, listenerId, signer };
+}
+
+async function registry(signer, did) {
+	const api = await getApi('trusted-issuer-registry', 10);
+	let address = api?.location?.address || '';
+	if (!address) {
+		process.stdout.write('deploying the trusted-issuer registry\n');
+		address = await deployContract('TrustedIssuerRegistry', signer, []);
+		address = (await publishApi('trusted-issuer-registry', 'TrustedIssuerRegistry', address)).address;
+	}
+	await call(`${ns('apis/trusted-issuer-registry/invoke/setIssuer')}?confirm=true`, {
+		method: 'POST',
+		headers: { 'content-type': 'application/json' },
+		body: JSON.stringify({
+			key: signer,
+			input: { issuer: did, vct: MEMBER_VCT, trusted: true },
+		}),
+	}, 30);
+	process.stdout.write(`registry ${address}\n`);
+	return address;
 }
 
 async function offer() {
@@ -207,16 +265,11 @@ async function offer() {
 }
 
 const signer = readRuntime('signer.address');
-let deployment = await existing();
-if (!deployment) {
-	process.stdout.write('deploying the attestor\n');
-	const address = await deployContract(signer);
-	deployment = await publish(signer, address);
-	writeFileSync(`${runtime}/deployment.json`, `${JSON.stringify(deployment, null, 2)}\n`);
-	process.stdout.write(`attestor ${deployment.address}\n`);
-} else {
-	writeFileSync(`${runtime}/deployment.json`, `${JSON.stringify(deployment, null, 2)}\n`);
-	process.stdout.write(`attestor already deployed at ${deployment.address}\n`);
-}
+const did = readRuntime('issuer.did');
+const deployment = await attestor(signer);
+deployment.registryAddress = await registry(signer, did);
+deployment.registryApi = 'trusted-issuer-registry';
+writeFileSync(`${runtime}/deployment.json`, `${JSON.stringify(deployment, null, 2)}\n`);
+process.stdout.write(`attestor ${deployment.address}\n`);
 const url = await offer();
 process.stdout.write(`offer ${url}\n`);

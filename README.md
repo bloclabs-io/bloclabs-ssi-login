@@ -78,7 +78,7 @@ cd demo
 ./setup.sh
 ```
 
-The first run downloads the images, generates keys under `demo/runtime/` (that directory is gitignored; nothing in it is committed), compiles the attestor with solc 0.8.28 for the Paris EVM, deploys it, installs WordPress and subscribes to FireFly. It then prints a credential offer for Ada Lovelace (`ada@example.com`) and the WordPress administrator password.
+The first run downloads the images, generates keys under `demo/runtime/` (that directory is gitignored; nothing in it is committed), compiles the attestor and the trusted-issuer registry with solc 0.8.28 for the Paris EVM, deploys both, trusts the generated issuer for the member credential, installs WordPress and subscribes to FireFly. It then prints a credential offer for Ada Lovelace (`ada@example.com`) and the WordPress administrator password. The bridge is pointed at the registry (`FIREFLY_REGISTRY_API`), so a presented credential is accepted only when that issuer and type are trusted on chain.
 
 Only three ports are published, all on `127.0.0.1`: WordPress at <http://127.0.0.1:8080>, the wallet at <http://127.0.0.1:7106>, and the wallet API at <http://127.0.0.1:7006>. FireFly's API has no authentication of its own, so it is not published.
 

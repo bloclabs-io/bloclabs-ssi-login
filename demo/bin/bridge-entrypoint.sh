@@ -18,6 +18,7 @@ export VERIFIER_URL=http://verifier:7004
 export FIREFLY_URL=http://firefly:5000
 export FIREFLY_NAMESPACE=default
 export FIREFLY_API_NAME=ssi-login-attestor
+export FIREFLY_REGISTRY_API=trusted-issuer-registry
 export BRIDGE_LOG_LEVEL=info
 
 exec node dist/src/main.js

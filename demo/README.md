@@ -2,7 +2,7 @@
 
 What `./setup.sh` starts, and why it is shaped this way. The walkthrough is [Try it](../README.md#try-it) in the repository README.
 
-`docker compose up` brings the containers up. `./setup.sh` does that and then compiles the attestor, deploys it through FireFly, installs WordPress and prints a credential offer. Run it from this directory. On Windows, use Git Bash: the script sets `MSYS_NO_PATHCONV` so Git Bash does not rewrite the container paths, and every generated secret is read back with carriage returns stripped.
+`docker compose up` brings the containers up. `./setup.sh` does that and then compiles the attestor and the trusted-issuer registry, deploys them through FireFly, trusts the generated issuer, installs WordPress and prints a credential offer. Run it from this directory. On Windows, use Git Bash: the script sets `MSYS_NO_PATHCONV` so Git Bash does not rewrite the container paths, and every generated secret is read back with carriage returns stripped.
 
 ## What is published
 
@@ -18,7 +18,7 @@ Everything else is on the Compose network `bloclabs-ssi-demo` and has no host po
 
 `keys` runs once. If `runtime/ready` is missing it generates the issuer key, the chain keys and the passwords into `runtime/` and exits. A later start leaves them in place, so the chain and the wallet keep the same keys. `runtime/` is gitignored. Do not commit it.
 
-Two secp256k1 keys are involved. The node key signs Besu blocks and is the validator in the genesis `extraData`. The other key is funded, is FireFly's signing key, and is the contract's first verifier, so it can call `attest`. The issuer key is P-256. Its `did:jwk` is written into the issuer config and into the bridge's allowed-issuer policy, so the two sides name the same issuer.
+Two secp256k1 keys are involved. The node key signs Besu blocks and is the validator in the genesis `extraData`. The other key is funded, is FireFly's signing key, is the attestor's first verifier (so it can call `attest`), and owns the trusted-issuer registry. The issuer key is P-256. Its `did:jwk` is written into the issuer config, into the bridge's allowed-issuer policy, and into `setIssuer` for the member credential type, so those three name the same issuer.
 
 Postgres, MariaDB, WordPress and the bridge read those files through a small entrypoint that strips a carriage return before exporting them. The issuer and the wallet images have no shell, so their committed config is an HOCON `include` of a file under `/runtime`.
 
@@ -26,7 +26,7 @@ Postgres, MariaDB, WordPress and the bridge read those files through a small ent
 
 WordPress is `wordpress:6.7.2-php8.2-apache`. Docker Hub does not publish a 6.6.10 image; 6.7.2 is a pinned release above the plugin's 6.6 requirement. The wallet and the issuer are walt.id 1.2.0, FireFly is v1.5.0 and evmconnect is v1.5.1.
 
-Besu 24.12.2, QBFT, chain id 1337, two-second blocks. The genesis stops at Paris (`mergeNetsplitBlock`, no Shanghai timestamp) and sets `zeroBaseFee`, because the attestor is compiled with solc 0.8.28 `--evm-version paris` (a later EVM emits `PUSH0`, which this chain rejects) and evmconnect is configured with a gas price of 0. `./setup.sh` compiles with `ethereum/solc:0.8.28` and deploys through FireFly's `/contracts/deploy`, then registers the `ssi-login-attestor` API and a `LoginAttested` listener. Running setup again reuses that API and only asks the issuer for a new offer.
+Besu 24.12.2, QBFT, chain id 1337, two-second blocks. The genesis stops at Paris (`mergeNetsplitBlock`, no Shanghai timestamp) and sets `zeroBaseFee`, because both contracts are compiled with solc 0.8.28 `--evm-version paris` (a later EVM emits `PUSH0`, which this chain rejects) and evmconnect is configured with a gas price of 0. `./setup.sh` compiles with `ethereum/solc:0.8.28` and deploys through FireFly's `/contracts/deploy`. It registers the `ssi-login-attestor` API and a `LoginAttested` listener, then deploys `TrustedIssuerRegistry`, publishes `trusted-issuer-registry`, and calls `setIssuer` for the generated `did:jwk` and `http://issuer.demo/openid4vci/member`. The bridge's `FIREFLY_REGISTRY_API` is that API name, so `isTrusted` runs before a login is attested. If either API is already published, setup keeps that contract's address and does not deploy a second one. A later run still refreshes the credential offer and repeats `setIssuer`.
 
 ## WordPress
 

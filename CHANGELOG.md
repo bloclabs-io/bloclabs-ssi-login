@@ -2,6 +2,7 @@
 
 ## 0.1.0-dev (unreleased)
 
+- The Docker demo deploys `TrustedIssuerRegistry`, trusts the generated issuer for the member credential type, and sets the bridge's `FIREFLY_REGISTRY_API`, so login is checked on chain the way the current bridge requires. A setup that finds the FireFly API already published reuses that contract instead of deploying another one (#67).
 - One-command Docker demo under `demo/`: WordPress, FireFly v1.5.0, a Besu QBFT chain, the verifier bridge and walt.id 1.2.0 issuer, wallet and verifier. The issuer key is generated at first start and is not committed. Walkthrough in the README (#67).
 - ADR 0006: issuer trust moves from the bridge's walt.id `allowed-issuer` policy to an owner-governed on-chain
   `TrustedIssuerRegistry` of `(issuer, vct)` pairs, which the bridge queries through FireFly before it attests, with
