@@ -59,6 +59,8 @@ export interface Config {
   callbackUrl: string;
   /** walt.id verifier-api2 base URL, as the bridge reaches it. */
   verifierUrl: string;
+  /** Ask walt.id to sign requests using its configured client id, key and x5c. */
+  verifierSignedRequest: boolean;
   firefly: FireFlyConfig;
   queries: Record<string, QueryDefinition>;
   logLevel: LogLevel;
@@ -86,6 +88,11 @@ export function loadConfig(env: NodeJS.ProcessEnv): Config {
   const callbackUrl = httpUrl(required(env, 'BRIDGE_CALLBACK_URL'), 'BRIDGE_CALLBACK_URL').replace(/\/+$/, '');
   const verifierUrl = httpUrl(required(env, 'VERIFIER_URL'), 'VERIFIER_URL').replace(/\/+$/, '');
 
+  const signedRequest = env['VERIFIER_SIGNED_REQUEST']?.trim() || 'false';
+  if (signedRequest !== 'true' && signedRequest !== 'false') {
+    throw new ConfigError('VERIFIER_SIGNED_REQUEST must be true or false');
+  }
+
   const firefly: FireFlyConfig = {
     url: httpUrl(required(env, 'FIREFLY_URL'), 'FIREFLY_URL').replace(/\/+$/, ''),
     namespace: env['FIREFLY_NAMESPACE']?.trim() || 'default',
@@ -103,6 +110,7 @@ export function loadConfig(env: NodeJS.ProcessEnv): Config {
     authToken,
     callbackUrl,
     verifierUrl,
+    verifierSignedRequest: signedRequest === 'true',
     firefly,
     queries: parseQueries(required(env, 'BRIDGE_QUERIES')),
     logLevel,

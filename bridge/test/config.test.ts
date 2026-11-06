@@ -15,6 +15,13 @@ describe('configuration', () => {
     assert.deepEqual(config.queries['default']?.dcql_query, QUERIES.default.dcql_query);
   });
 
+  it('defaults to unsigned and accepts only explicit signing booleans', () => {
+    assert.equal(loadConfig(baseEnv()).verifierSignedRequest, false);
+    assert.equal(loadConfig(baseEnv({ VERIFIER_SIGNED_REQUEST: 'false' })).verifierSignedRequest, false);
+    assert.equal(loadConfig(baseEnv({ VERIFIER_SIGNED_REQUEST: 'true' })).verifierSignedRequest, true);
+    assert.throws(() => loadConfig(baseEnv({ VERIFIER_SIGNED_REQUEST: 'yes' })), /VERIFIER_SIGNED_REQUEST/);
+  });
+
   it('refuses to start without the WordPress auth token', () => {
     assert.throws(() => loadConfig(baseEnv({ BRIDGE_AUTH_TOKEN: undefined })), (error: unknown) =>
       error instanceof ConfigError && /BRIDGE_AUTH_TOKEN is required/.test(error.message));

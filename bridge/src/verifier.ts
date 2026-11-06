@@ -30,6 +30,7 @@ export interface SessionSetupOptions {
   retainUntil: Date;
   webhookUrl: string;
   webhookToken: string;
+  signedRequest?: boolean;
 }
 
 /**
@@ -44,6 +45,9 @@ export function buildSessionSetup(options: SessionSetupOptions): Record<string, 
     retention_date: options.retainUntil.toISOString(),
     notifications: { webhook: { url: options.webhookUrl, bearer_token: options.webhookToken } },
   };
+  if (options.signedRequest) {
+    core['signed_request'] = true;
+  }
   if (options.query.policies) {
     core['policies'] = options.query.policies;
   }
