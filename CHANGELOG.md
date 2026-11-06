@@ -1,6 +1,12 @@
 # Changelog
 
-## 0.1.0-dev (unreleased)
+## 0.4.0-dev (unreleased)
+
+## 0.3.0 (2026-11-06)
+
+First release. The first end-to-end logins with a real phone wallet (Paradym on iOS) ran on 2026-11-06, same device
+and cross device, including linking a credential to an existing account. Not externally reviewed yet (milestone 1.0).
+
 
 - Same-device login through the browser's Digital Credentials API (#76). With `BRIDGE_DC_API_ORIGINS` and
   `VERIFIER_PUBLIC_URL` set, the bridge opens a second walt.id session (`dc_api_openid4vp`, bound to the login
