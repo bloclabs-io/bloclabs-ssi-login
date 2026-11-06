@@ -14,6 +14,7 @@ namespace BlocLabs\SsiLogin\Rest;
 
 use BlocLabs\SsiLogin\Config\Settings;
 use BlocLabs\SsiLogin\Login\LoginFinalizer;
+use BlocLabs\SsiLogin\Identity\CredentialLinker;
 use BlocLabs\SsiLogin\Session\AttemptRepository;
 use BlocLabs\SsiLogin\Session\BrowserBinding;
 
@@ -24,6 +25,7 @@ final class CompleteController extends BrowserController {
 		AttemptRepository $attempts,
 		BrowserBinding $binding,
 		private readonly LoginFinalizer $finalizer,
+		private readonly CredentialLinker $linker,
 	) {
 		parent::__construct( $settings, $attempts, $binding );
 	}
@@ -48,6 +50,20 @@ final class CompleteController extends BrowserController {
 		$attempt = $this->bound_attempt( (string) $request->get_param( 'attempt' ) );
 		if ( is_wp_error( $attempt ) ) {
 			return $attempt;
+		}
+
+		if ( 'link' === $attempt->purpose ) {
+			$allowed = ProfileAuthorization::check( $request );
+			if ( is_wp_error( $allowed ) ) {
+				return $allowed;
+			}
+			$result = $this->linker->complete( $attempt );
+			if ( is_wp_error( $result ) ) {
+				return $result;
+			}
+			$response = new \WP_REST_Response( array( 'linked' => true ) );
+			$response->header( 'Cache-Control', 'no-store' );
+			return $response;
 		}
 
 		$user = $this->finalizer->finalize( $attempt );

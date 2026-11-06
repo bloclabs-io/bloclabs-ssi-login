@@ -48,7 +48,7 @@ final class LoginFinalizer {
 	 * @return \WP_User|\WP_Error A WP_Error with code RETRY leaves the attempt verified.
 	 */
 	public function finalize( Attempt $attempt ) {
-		if ( AttemptStatus::Verified !== $attempt->status || $attempt->is_expired() ) {
+		if ( 'login' !== $attempt->purpose || AttemptStatus::Verified !== $attempt->status || $attempt->is_expired() ) {
 			return new \WP_Error( 'bloclabs_ssi_not_verified', __( 'This login request is not verified or has expired.', 'bloclabs-ssi-login' ), array( 'status' => 409 ) );
 		}
 

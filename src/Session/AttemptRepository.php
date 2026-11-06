@@ -22,7 +22,7 @@ final class AttemptRepository {
 	/**
 	 * Opens a new pending attempt with fresh random identifiers.
 	 */
-	public function open( string $binding_hash, ?string $ip_hash, int $ttl, ?string $redirect_to ): Attempt {
+	public function open( string $binding_hash, ?string $ip_hash, int $ttl, ?string $redirect_to, string $purpose = 'login', ?int $link_user_id = null ): Attempt {
 		global $wpdb;
 
 		$now = time();
@@ -34,6 +34,8 @@ final class AttemptRepository {
 			// Shared with the verifier only; blinds the subject commitment on chain.
 			'blinding_secret' => bin2hex( random_bytes( 32 ) ),
 			'status'          => AttemptStatus::Pending->value,
+			'purpose'         => $purpose,
+			'link_user_id'    => $link_user_id,
 			'ip_hash'         => $ip_hash,
 			'redirect_to'     => $redirect_to,
 			'created_at'      => gmdate( 'Y-m-d H:i:s', $now ),

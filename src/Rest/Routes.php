@@ -15,6 +15,7 @@ declare(strict_types=1);
 namespace BlocLabs\SsiLogin\Rest;
 
 use BlocLabs\SsiLogin\Plugin;
+use BlocLabs\SsiLogin\Identity\CredentialLinker;
 
 final class Routes {
 
@@ -28,7 +29,8 @@ final class Routes {
 		$controllers = array(
 			new InitiateController( $p->settings(), $p->attempts(), $p->binding(), $p->verifier() ),
 			new StatusController( $p->settings(), $p->attempts(), $p->binding(), $p->reconciler() ),
-			new CompleteController( $p->settings(), $p->attempts(), $p->binding(), $p->finalizer() ),
+			new CompleteController( $p->settings(), $p->attempts(), $p->binding(), $p->finalizer(), new CredentialLinker( $p->settings(), $p->attempts(), $p->identities(), $p->verifier() ) ),
+			new UnlinkController( $p->identities() ),
 			new WebhookController( $p->settings(), $p->processor() ),
 		);
 

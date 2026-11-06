@@ -74,6 +74,7 @@ final class Plugin {
 
 		if ( is_admin() ) {
 			( new SettingsPage( $this->settings() ) )->register();
+			( new \BlocLabs\SsiLogin\Admin\ProfileScreen( $this ) )->register();
 		}
 
 		if ( defined( 'WP_CLI' ) && WP_CLI ) {
