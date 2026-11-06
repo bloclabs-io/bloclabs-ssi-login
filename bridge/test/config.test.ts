@@ -11,8 +11,15 @@ describe('configuration', () => {
     assert.equal(config.firefly.namespace, 'default');
     assert.equal(config.firefly.apiName, 'ssi-login-attestor');
     assert.equal(config.firefly.authHeader, 'Bearer proxy');
+    assert.equal(config.firefly.registryApiName, undefined, 'no registry unless FIREFLY_REGISTRY_API is set');
     assert.deepEqual(Object.keys(config.queries), ['default', 'all']);
     assert.deepEqual(config.queries['default']?.dcql_query, QUERIES.default.dcql_query);
+  });
+
+  it('turns the on-chain issuer check on with FIREFLY_REGISTRY_API', () => {
+    assert.equal(loadConfig(baseEnv({ FIREFLY_REGISTRY_API: ' trusted-issuer-registry ' })).firefly.registryApiName, 'trusted-issuer-registry');
+    assert.equal(Object.hasOwn(loadConfig(baseEnv({ FIREFLY_REGISTRY_API: '' })).firefly, 'registryApiName'), false, 'empty is unset');
+    assert.equal(Object.hasOwn(loadConfig(baseEnv({ FIREFLY_REGISTRY_API: '   ' })).firefly, 'registryApiName'), false, 'blank is unset');
   });
 
   it('refuses to start without the WordPress auth token', () => {

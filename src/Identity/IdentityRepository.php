@@ -6,8 +6,7 @@
  * does not list which DIDs hold accounts here. With BLOCLABS_SSI_SUBJECT_KEY in
  * wp-config.php, a full database dump cannot test guessed DIDs either; with the
  * stored fallback key, it can. A short label is kept for the
- * user's profile screen and the Users screen ("did:key #3f9a1c2e"): a keyed
- * fingerprint that does not reveal the subject.
+ * user's profile screen ("did:key #3f9a1c2e"): a keyed fingerprint that does not reveal the subject.
  *
  * phpcs:disable WordPress.DB.DirectDatabaseQuery -- custom table; lookups are by unique key.
  *
