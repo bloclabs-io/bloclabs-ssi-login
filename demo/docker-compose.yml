@@ -1,0 +1,350 @@
+# Local demo. Published ports are bound to 127.0.0.1 only.
+# Host ports come from .env (defaults: WordPress 8080, wallet 7106,
+# wallet API 7006). FireFly, Besu, the verifier, the issuer and the
+# bridge stay on the Compose network. See README.md in this directory.
+
+name: bloclabs-ssi-demo
+
+services:
+  keys:
+    image: node:22.21.0-alpine
+    user: "0:0"
+    restart: "no"
+    environment:
+      DEMO_RUNTIME: /runtime
+      DEMO_SIGNER: /signer
+      DEMO_REGISTRY_OWNER: /registry-owner
+      DEMO_WALLET_API_PUBLIC_URL: http://127.0.0.1:${WALLET_API_PORT:-7006}
+    volumes:
+      - ./bin:/opt/demo:ro
+      - ./runtime:/runtime
+      - ./signer:/signer
+      - ./registry-owner:/registry-owner
+    command: ["node", "/opt/demo/init-keys.mjs"]
+    networks: [demo, setup]
+
+  besu:
+    image: hyperledger/besu:24.12.2
+    user: "0:0"
+    restart: unless-stopped
+    depends_on:
+      keys:
+        condition: service_completed_successfully
+    volumes:
+      - besu_data:/data
+      - ./runtime:/runtime:ro
+    command:
+      - --genesis-file=/runtime/genesis.json
+      - --data-path=/data
+      - --node-private-key-file=/runtime/nodekey
+      - --rpc-http-enabled
+      - --rpc-http-host=0.0.0.0
+      - --rpc-http-port=8545
+      - --rpc-http-api=ETH,NET,WEB3,QBFT,TXPOOL
+      - --host-allowlist=*
+      - --rpc-http-cors-origins=all
+      - --min-gas-price=0
+      - --sync-mode=FULL
+      - --discovery-enabled=false
+    networks: [demo, setup]
+
+  ethsigner:
+    image: ghcr.io/hyperledger-firefly/signer:v1.2.1
+    user: "0:0"
+    restart: unless-stopped
+    depends_on:
+      keys:
+        condition: service_completed_successfully
+      besu:
+        condition: service_started
+    entrypoint: ["/bin/sh", "/entrypoint.sh"]
+    tmpfs:
+      - /data
+    volumes:
+      - ./runtime:/runtime:ro
+      - ./signer:/attest:ro
+      - ./bin/signer-entrypoint.sh:/entrypoint.sh:ro
+      - ./bin/signer-wallet.sh:/signer-wallet.sh:ro
+    healthcheck:
+      test:
+        - CMD
+        - curl
+        - -sf
+        - -X
+        - POST
+        - -H
+        - Content-Type: application/json
+        - -d
+        - '{"jsonrpc":"2.0","method":"net_version","params":[],"id":1}'
+        - http://127.0.0.1:8545/
+      interval: 5s
+      timeout: 3s
+      retries: 40
+      start_period: 15s
+    networks: [demo]
+
+  # Signs only the registry-owner key, and only on the setup network.
+  # The bridge is not on that network, and FireFly's signer never loads this key.
+  owner-signer:
+    profiles: ["setup"]
+    image: ghcr.io/hyperledger-firefly/signer:v1.2.1
+    user: "0:0"
+    restart: "no"
+    depends_on:
+      besu:
+        condition: service_started
+    entrypoint: ["/bin/sh", "/owner-entrypoint.sh"]
+    tmpfs:
+      - /data
+    volumes:
+      - ./runtime:/runtime:ro
+      - ./registry-owner:/owner:ro
+      - ./owner-signer.yaml:/owner-signer.yaml:ro
+      - ./bin/owner-entrypoint.sh:/owner-entrypoint.sh:ro
+      - ./bin/signer-wallet.sh:/signer-wallet.sh:ro
+    healthcheck:
+      test:
+        - CMD
+        - curl
+        - -sf
+        - -X
+        - POST
+        - -H
+        - Content-Type: application/json
+        - -d
+        - '{"jsonrpc":"2.0","method":"net_version","params":[],"id":1}'
+        - http://127.0.0.1:8545/
+      interval: 5s
+      timeout: 3s
+      retries: 20
+      start_period: 5s
+    networks: [setup]
+
+  evmconnect:
+    image: ghcr.io/hyperledger-firefly/evmconnect:v1.5.1
+    user: "0:0"
+    restart: unless-stopped
+    depends_on:
+      keys:
+        condition: service_completed_successfully
+      ethsigner:
+        condition: service_started
+    command: ["-f", "/runtime/evmconnect.yaml"]
+    volumes:
+      - ./runtime:/runtime:ro
+      - evmconnect_data:/evmconnect/data
+    networks: [demo]
+
+  postgres:
+    image: postgres:16.6
+    restart: unless-stopped
+    depends_on:
+      keys:
+        condition: service_completed_successfully
+    entrypoint: ["/bin/sh", "/entrypoint.sh"]
+    command: ["postgres"]
+    volumes:
+      - ./bin/postgres-entrypoint.sh:/entrypoint.sh:ro
+      - ./postgres/init.sh:/docker-entrypoint-initdb.d/10-demo.sh:ro
+      - ./runtime:/runtime:ro
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    networks: [demo]
+
+  firefly:
+    image: ghcr.io/hyperledger-firefly/firefly:v1.5.0
+    restart: unless-stopped
+    depends_on:
+      keys:
+        condition: service_completed_successfully
+      postgres:
+        condition: service_healthy
+      evmconnect:
+        condition: service_started
+    command: ["-f", "/runtime/firefly.core.yaml"]
+    volumes:
+      - ./runtime:/runtime:ro
+    healthcheck:
+      test: ["CMD", "curl", "-sf", "http://127.0.0.1:5000/api/v1/status"]
+      interval: 5s
+      timeout: 3s
+      retries: 40
+      start_period: 20s
+    networks: [demo]
+
+  mariadb:
+    image: mariadb:11.4.4
+    restart: unless-stopped
+    depends_on:
+      keys:
+        condition: service_completed_successfully
+    entrypoint: ["/bin/sh", "/entrypoint.sh"]
+    command: ["mariadbd"]
+    volumes:
+      - ./bin/mariadb-entrypoint.sh:/entrypoint.sh:ro
+      - ./runtime:/runtime:ro
+      - mariadb_data:/var/lib/mysql
+    healthcheck:
+      test: ["CMD", "healthcheck.sh", "--connect", "--innodb_initialized"]
+      interval: 5s
+      timeout: 5s
+      retries: 30
+      start_period: 20s
+    networks: [demo]
+
+  wordpress:
+    image: wordpress:6.7.2-php8.2-apache
+    restart: unless-stopped
+    depends_on:
+      keys:
+        condition: service_completed_successfully
+      mariadb:
+        condition: service_healthy
+    entrypoint: ["/bin/sh", "/entrypoint.sh"]
+    command: ["apache2-foreground"]
+    ports:
+      - "127.0.0.1:${WORDPRESS_PORT:-8080}:80"
+    environment:
+      WP_HOME: http://127.0.0.1:${WORDPRESS_PORT:-8080}
+      WP_SITEURL: http://127.0.0.1:${WORDPRESS_PORT:-8080}
+      WALLET_WEB_PUBLIC_URL: http://127.0.0.1:${WALLET_WEB_PORT:-7106}
+    volumes:
+      - wordpress_html:/var/www/html
+      - ..:/var/www/html/wp-content/plugins/bloclabs-ssi-login:ro
+      - ./wordpress/runtime-mask:/var/www/html/wp-content/plugins/bloclabs-ssi-login/demo/runtime:ro
+      - ./wordpress/signer-mask:/var/www/html/wp-content/plugins/bloclabs-ssi-login/demo/signer:ro
+      - ./wordpress/registry-owner-mask:/var/www/html/wp-content/plugins/bloclabs-ssi-login/demo/registry-owner:ro
+      - ./wordpress/mu-plugins:/var/www/html/wp-content/mu-plugins:ro
+      - ./wordpress/apache-deny.conf:/etc/apache2/conf-enabled/bloclabs-demo-deny.conf:ro
+      - ./bin/wordpress-entrypoint.sh:/entrypoint.sh:ro
+      - ./runtime:/runtime:ro
+    networks: [demo]
+
+  wpcli:
+    image: wordpress:cli-2.11.0-php8.2
+    profiles: ["setup"]
+    user: "33:33"
+    environment:
+      HOME: /tmp
+      WORDPRESS_PUBLIC_URL: http://127.0.0.1:${WORDPRESS_PORT:-8080}
+    depends_on:
+      wordpress:
+        condition: service_started
+    entrypoint: ["bash", "/opt/demo/wp-setup.sh"]
+    volumes:
+      - wordpress_html:/var/www/html
+      - ..:/var/www/html/wp-content/plugins/bloclabs-ssi-login:ro
+      - ./wordpress/runtime-mask:/var/www/html/wp-content/plugins/bloclabs-ssi-login/demo/runtime:ro
+      - ./wordpress/signer-mask:/var/www/html/wp-content/plugins/bloclabs-ssi-login/demo/signer:ro
+      - ./wordpress/registry-owner-mask:/var/www/html/wp-content/plugins/bloclabs-ssi-login/demo/registry-owner:ro
+      - ./wordpress/mu-plugins:/var/www/html/wp-content/mu-plugins:ro
+      - ./bin:/opt/demo:ro
+      - ./runtime:/runtime:ro
+    networks: [demo]
+
+  issuer:
+    image: waltid/issuer-api2:1.2.0
+    restart: unless-stopped
+    depends_on:
+      keys:
+        condition: service_completed_successfully
+    volumes:
+      - ./walt/issuer:/waltid-issuer-api2/config:ro
+      - ./runtime:/runtime:ro
+    networks: [demo]
+
+  verifier:
+    image: waltid/verifier-api2:1.2.0
+    restart: unless-stopped
+    volumes:
+      - ./walt/verifier:/waltid-verifier-api2/config:ro
+    networks: [demo]
+
+  bridge:
+    build:
+      context: ../bridge
+      dockerfile: Dockerfile
+    image: bloclabs-ssi-demo-bridge
+    restart: unless-stopped
+    depends_on:
+      keys:
+        condition: service_completed_successfully
+      verifier:
+        condition: service_started
+      firefly:
+        condition: service_started
+    entrypoint: ["/bin/sh", "/entrypoint.sh"]
+    volumes:
+      - ./bin/bridge-entrypoint.sh:/entrypoint.sh:ro
+      - ./runtime:/runtime:ro
+    networks: [demo]
+
+  wallet:
+    image: waltid/wallet-api2:1.2.0
+    restart: unless-stopped
+    depends_on:
+      keys:
+        condition: service_completed_successfully
+      postgres:
+        condition: service_healthy
+    ports:
+      - "127.0.0.1:${WALLET_API_PORT:-7006}:7006"
+    volumes:
+      - ./walt/wallet:/waltid-wallet-api2/config:ro
+      - ./runtime:/runtime:ro
+    networks: [demo]
+
+  wallet-web:
+    image: waltid/wallet-demo-compose-web:1.2.0
+    restart: unless-stopped
+    depends_on:
+      wallet:
+        condition: service_started
+    ports:
+      - "127.0.0.1:${WALLET_WEB_PORT:-7106}:8080"
+    environment:
+      WALLET_API2_PUBLIC_URL: http://127.0.0.1:${WALLET_API_PORT:-7006}
+      WALLET_BRAND_APP_TITLE: blocLabs Wallet
+      WALLET_BRAND_PRIMARY: "#ff782d"
+      WALLET_BRAND_ON_PRIMARY: "#333333"
+      WALLET_BRAND_SECONDARY: "#f24c0a"
+      WALLET_BRAND_ON_SECONDARY: "#000000"
+      WALLET_BRAND_PRIMARY_CONTAINER: "#f7f7fa"
+      WALLET_BRAND_ON_PRIMARY_CONTAINER: "#333333"
+    networks: [demo]
+
+  edge:
+    image: caddy:2.8.4
+    restart: unless-stopped
+    depends_on:
+      issuer:
+        condition: service_started
+      verifier:
+        condition: service_started
+    command: ["run", "--config", "/etc/caddy/Caddyfile", "--adapter", "caddyfile"]
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+    networks:
+      demo:
+        aliases:
+          - verifier.demo
+          - issuer.demo
+
+networks:
+  demo:
+    name: bloclabs-ssi-demo
+  # The registry-owner signer and Besu. The bridge is not attached, so it
+  # cannot ask this signer to call setIssuer.
+  setup:
+    name: bloclabs-ssi-demo-setup
+
+volumes:
+  besu_data:
+  evmconnect_data:
+  postgres_data:
+  mariadb_data:
+  wordpress_html:

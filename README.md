@@ -71,6 +71,30 @@ The full flow, with every FireFly call, is in [docs/FIREFLY-FLOW.md](docs/FIREFL
 - On multisite: activate it on each site (network activation is refused), and only a network administrator
   (`manage_network_options`) can open and save the settings.
 
+## Try it
+
+A local demo of the whole login: WordPress, this plugin, the verifier bridge, walt.id issuer / wallet / verifier 1.2.0, and Hyperledger FireFly 1.5.0 on a Besu chain. Docker is the only dependency. On Windows, use Docker Desktop and run the commands in Git Bash.
+
+```bash
+cd demo
+./setup.sh
+```
+
+The first run downloads the images, generates keys under `demo/runtime/`, `demo/signer/` and `demo/registry-owner/` (those directories are gitignored; nothing in them is committed), compiles the attestor and the trusted-issuer registry with solc 0.8.28 for the Paris EVM, deploys both, trusts the generated issuer for the member credential, installs WordPress and subscribes to FireFly. It then prints a credential offer for Ada Lovelace (`ada@example.com`) and the WordPress administrator password. The bridge is pointed at the registry (`FIREFLY_REGISTRY_API`). Its signing key can attest and is not the registry owner. Setup signs trust-list changes with a signer the bridge cannot reach, so a presented credential is accepted only when that issuer and type are trusted on chain.
+
+Only three ports are published, all on `127.0.0.1`. The defaults are WordPress at <http://127.0.0.1:8080>, the wallet at <http://127.0.0.1:7106>, and the wallet API at <http://127.0.0.1:7006>. Set `WORDPRESS_PORT`, `WALLET_WEB_PORT` and `WALLET_API_PORT` in [`demo/.env`](demo/.env) when those are already taken; `./setup.sh` prints the addresses it bound. FireFly's API has no authentication of its own, so it is not published.
+
+1. Open the wallet and register (any email, password of at least 4 characters).
+2. On Receive, paste the credential offer `./setup.sh` printed. The offer lasts a day; run `./setup.sh` again for a new one.
+3. Open the login page `./setup.sh` printed (by default <http://127.0.0.1:8080/wp-login.php>) and choose **Log in with a digital credential**.
+4. Copy the address of **Open wallet on this device**. It starts with `openid4vp://`. A desktop browser will not hand that scheme to the web wallet.
+5. In the wallet, on Present, paste that address and approve.
+6. The site home page greets you as Ada Lovelace. The demo creates that account from the credential (`auto_provision`); the display name is the credential's `name` claim.
+
+The wallet picks up blocLabs orange from its image settings. WordPress in the demo also uses Barlow and Exo, pill buttons and the light panel colour. The plugin itself stays unbranded; the demo look is a must-use plugin mounted only here.
+
+This stack is a local demo, not a deployment guide. Reset it with `docker compose down -v` and `rm -rf runtime signer registry-owner` from `demo/` (the chain data and the generated keys have to go together). Details of how the containers find each other are in [demo/README.md](demo/README.md).
+
 ## Development
 
 ```bash

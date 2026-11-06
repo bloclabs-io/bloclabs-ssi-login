@@ -1,0 +1,168 @@
+/*
+ * blocLabs demo. Tokens: primary #ff782d, emphasis #f24c0a, body #666,
+ * headings #333, page #fff, panels #f7f7fa, borders #e8e8e8.
+ * Barlow for text, Exo for headings and buttons. White on the orange
+ * fails contrast, so orange controls use #333 (and #000 on the emphasis
+ * hover). The wallet image can only take the colour variables.
+ */
+
+:root {
+	--bloclabs-demo-primary: #ff782d;
+	--bloclabs-demo-emphasis: #f24c0a;
+	--bloclabs-demo-text: #666;
+	--bloclabs-demo-heading: #333;
+	--bloclabs-demo-page: #fff;
+	--bloclabs-demo-panel: #f7f7fa;
+	--bloclabs-demo-border: #e8e8e8;
+	--bloclabs-demo-font: "Barlow", "Segoe UI", sans-serif;
+	--bloclabs-demo-display: "Exo", "Barlow", sans-serif;
+}
+
+body.bloclabs-demo {
+	margin: 0;
+	background: var(--bloclabs-demo-page);
+	color: var(--bloclabs-demo-text);
+	font-family: var(--bloclabs-demo-font);
+	font-size: 18px;
+	line-height: 1.5;
+}
+
+.bloclabs-demo-page {
+	max-width: 40rem;
+	margin: 0 auto;
+	padding: 3rem 1.25rem 4rem;
+}
+
+.bloclabs-demo-mark,
+.bloclabs-demo-page h1,
+.bloclabs-demo-page h2,
+.bloclabs-demo-page strong,
+.bloclabs-demo-button {
+	font-family: var(--bloclabs-demo-display);
+	color: var(--bloclabs-demo-heading);
+}
+
+.bloclabs-demo-mark {
+	margin: 0 0 0.5rem;
+	font-size: 0.95rem;
+	font-weight: 700;
+	letter-spacing: 0.04em;
+	text-transform: uppercase;
+	border-bottom: 4px solid var(--bloclabs-demo-primary);
+	display: inline-block;
+}
+
+.bloclabs-demo-page h1 {
+	margin: 0 0 1.5rem;
+	font-size: 2.25rem;
+	font-weight: 700;
+	line-height: 1.2;
+}
+
+.bloclabs-demo-page h2 {
+	margin: 0 0 0.5rem;
+	font-size: 1.35rem;
+	font-weight: 600;
+}
+
+.bloclabs-demo-card {
+	background: var(--bloclabs-demo-panel);
+	border: 1px solid var(--bloclabs-demo-border);
+	border-radius: 20px;
+	padding: 1.25rem 1.5rem;
+	margin: 0 0 1rem;
+}
+
+.bloclabs-demo-hello {
+	margin-top: 0;
+	color: var(--bloclabs-demo-heading);
+	font-family: var(--bloclabs-demo-display);
+	font-size: 1.5rem;
+	font-weight: 600;
+}
+
+.bloclabs-demo-button {
+	display: inline-block;
+	background: var(--bloclabs-demo-primary);
+	color: var(--bloclabs-demo-heading);
+	border-radius: 60px;
+	padding: 0.7rem 1.4rem;
+	text-decoration: none;
+	font-weight: 600;
+}
+
+.bloclabs-demo-button:hover,
+.bloclabs-demo-button:focus {
+	background: var(--bloclabs-demo-emphasis);
+	color: #000;
+}
+
+.bloclabs-demo-link {
+	color: var(--bloclabs-demo-heading);
+	font-family: var(--bloclabs-demo-display);
+	font-weight: 600;
+}
+
+body.login {
+	background: var(--bloclabs-demo-page, #fff);
+	color: #666;
+	font-family: "Barlow", "Segoe UI", sans-serif;
+	--bloclabs-ssi-button-color: #333;
+	--bloclabs-ssi-button-background: #ff782d;
+	--bloclabs-ssi-button-hover-color: #000;
+	--bloclabs-ssi-button-hover-background: #f24c0a;
+}
+
+body.login h1 a {
+	background-image: none;
+	background: none;
+	text-indent: 0;
+	overflow: visible;
+	width: auto;
+	height: auto;
+	font-family: "Exo", "Barlow", sans-serif;
+	font-size: 2rem;
+	font-weight: 700;
+	line-height: 1.2;
+	color: #333;
+	border-bottom: 4px solid #ff782d;
+}
+
+body.login form {
+	border: 1px solid #e8e8e8;
+	border-radius: 20px;
+	font-family: "Barlow", "Segoe UI", sans-serif;
+}
+
+body.login form .input,
+body.login input[type="text"],
+body.login input[type="password"] {
+	border-radius: 12px;
+	font-family: "Barlow", "Segoe UI", sans-serif;
+}
+
+body.login form label {
+	font-family: "Exo", "Barlow", sans-serif;
+	color: #333;
+}
+
+body.login #wp-submit,
+body.login #bloclabs-ssi .bloclabs-ssi__start,
+body.login #bloclabs-ssi .bloclabs-ssi__open {
+	border-radius: 60px;
+	font-family: "Exo", "Barlow", sans-serif;
+	font-weight: 600;
+}
+
+body.login #wp-submit {
+	background: #ff782d;
+	border-color: #ff782d;
+	color: #333;
+}
+
+body.login #wp-submit:hover,
+body.login #wp-submit:focus {
+	background: #f24c0a;
+	border-color: #f24c0a;
+	color: #000;
+}

@@ -2,6 +2,12 @@
 
 ## 0.1.0-dev (unreleased)
 
+- The Docker demo publishes WordPress, the web wallet and the wallet API on ports from `demo/.env` (`WORDPRESS_PORT`, `WALLET_WEB_PORT`, `WALLET_API_PORT`; defaults 8080, 7106 and 7006), still bound to `127.0.0.1`. The wallet page's `WALLET_API2_PUBLIC_URL` and the wallet API's `publicBaseUrl` follow the wallet API port (#67).
+- The Docker demo signs registry deployment and `setIssuer` with a signer on a network the bridge does not join. FireFly's signer never holds the registry owner key (#67).
+- The Docker demo does not leave the registry owner key in the signer's stored directory. The signer rebuilds its wallet from the attestor key on every start, and drops an in-memory owner key when setup is no longer running (#67).
+- The Docker demo's registry owner is a separate key from the bridge's signing key. `setup.sh` loads that key into the signer only while it deploys the registry and calls `setIssuer`, then removes it, so the bridge can attest and cannot change the trust list (#67).
+- The Docker demo deploys `TrustedIssuerRegistry`, trusts the generated issuer for the member credential type, and sets the bridge's `FIREFLY_REGISTRY_API`, so login is checked on chain the way the current bridge requires. A setup that finds the FireFly API already published reuses that contract instead of deploying another one (#67).
+- One-command Docker demo under `demo/`: WordPress, FireFly v1.5.0, a Besu QBFT chain, the verifier bridge and walt.id 1.2.0 issuer, wallet and verifier. The issuer key is generated at first start and is not committed. Walkthrough in the README (#67).
 - Same-device login through the browser's Digital Credentials API (#76). With `BRIDGE_DC_API_ORIGINS` and
   `VERIFIER_PUBLIC_URL` set, the bridge opens a second walt.id session (`dc_api_openid4vp`, bound to the login
   pages' origins) next to the QR code's and returns it as `dc_api`: the `requests` for `navigator.credentials.get`

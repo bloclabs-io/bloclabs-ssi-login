@@ -105,3 +105,13 @@ jobs:
           cache-dependency-path: bridge/package-lock.json
       - run: npm ci
       - run: npm test
+
+  demo:
+    name: Demo key isolation
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - run: node --test demo/bin/owner-key.test.mjs demo/bin/ports.test.mjs
