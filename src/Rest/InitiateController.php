@@ -116,7 +116,8 @@ final class InitiateController extends BrowserController {
 					$attempt->nonce,
 					$attempt->blinding_secret,
 					$this->settings->string( 'credential_query' ),
-					$attempt->expires_at
+					$attempt->expires_at,
+					ReturnUrl::for_attempt( $this->settings, $attempt )
 				)
 			);
 		} catch ( VerifierException $e ) {

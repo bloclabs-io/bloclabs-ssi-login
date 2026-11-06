@@ -181,8 +181,7 @@ function parseOrigin(value: string): string {
   } catch {
     throw new ConfigError(`${where} is not an absolute URL`);
   }
-  const loopback = url.hostname === 'localhost' || url.hostname.endsWith('.localhost') || url.hostname === '127.0.0.1' || url.hostname === '[::1]';
-  if (url.protocol !== 'https:' && !(url.protocol === 'http:' && loopback)) {
+  if (!isSecureWebUrl(url)) {
     throw new ConfigError(`${where} must be an https origin (http only on localhost): the Digital Credentials API needs a secure context`);
   }
   if (url.username !== '' || url.password !== '' || url.search !== '' || url.hash !== '' || url.pathname !== '/') {
@@ -190,6 +189,16 @@ function parseOrigin(value: string): string {
   }
   // Normalised (lower-case host, no trailing slash): what the browser reports.
   return url.origin;
+}
+
+/**
+ * Whether a URL is one a browser treats as a secure context: https, or plain http
+ * on a loopback host (a localhost test stack). Shared by the Digital Credentials
+ * API origins and the same-device return URL.
+ */
+export function isSecureWebUrl(url: URL): boolean {
+  const loopback = url.hostname === 'localhost' || url.hostname.endsWith('.localhost') || url.hostname === '127.0.0.1' || url.hostname === '[::1]';
+  return url.protocol === 'https:' || (url.protocol === 'http:' && loopback);
 }
 
 function required(env: NodeJS.ProcessEnv, name: string): string {

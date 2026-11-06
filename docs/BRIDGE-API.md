@@ -24,7 +24,8 @@ Request:
   "nonce": "q2F8…",
   "blinding_secret": "9f3a…c41e",
   "query": "default",
-  "expires_at": "2026-11-03T12:00:00Z"
+  "expires_at": "2026-11-03T12:00:00Z",
+  "return_url": "https://login.example/wp-login.php?bloclabs_ssi_attempt=3f9c…a1d0"
 }
 ```
 - `correlation_id`: 64 hex characters. The bridge echoes it on chain and must never accept the same one twice.
@@ -39,6 +40,18 @@ Request:
   birth_date", or "an employee credential from issuer X"). WordPress never sends DCQL itself.
 - `expires_at`: refuse wallet responses after this time. *Reference bridge:* passed to walt.id as the session's
   `expiration_date`; the bridge also refuses to attest a decision that arrives after it.
+- `return_url` (optional): where a wallet on the same device sends the holder once it has shared, so that the
+  browser comes back to the front and the page finishes the attempt (OpenID4VP 1.0 `redirect_uri` in the
+  verifier's answer to the wallet's `direct_post`). An absolute `https` URL without credentials, at most 2048
+  characters; plain `http` on `localhost` only. Anything else is refused with `400 invalid_request`, and the
+  bridge never writes the URL to a log. WordPress sends the login or profile page the attempt started on, with
+  the attempt's public id in the query, and omits the field on a plain-`http` site. The URL binds nothing: the
+  returned page still needs this browser's binding cookie to poll or complete the attempt, and a replay finds it
+  consumed or unknown ([SECURITY-MODEL](SECURITY-MODEL.md), threat 24). A cross-device wallet ignores it.
+  *Reference bridge:* passed to walt.id as the cross-device session's `redirects` (`success_redirect_uri` and
+  `error_redirect_uri` alike, so a refused presentation returns the holder too); walt.id appends its own
+  `response_code` to the URL it hands the wallet, which WordPress drops unread. The Digital Credentials API
+  session gets no redirects: the browser already has that answer.
 
 Response `201`:
 ```json

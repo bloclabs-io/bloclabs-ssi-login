@@ -1,4 +1,8 @@
-/** Self-service credential linking; WordPress session and browser binding are both required. */
+/**
+ * Self-service credential linking; WordPress session and browser binding are both required.
+ * A wallet opened through the link on this device sends the holder back here with the
+ * attempt in the address (ReturnUrl in PHP); the page then finishes that attempt.
+ */
 ( function () {
 	'use strict';
 	const cfg = window.bloclabsSsiProfile;
@@ -61,7 +65,11 @@
 			}
 		}
 	}
-	function poll( id, me ) {
+	/**
+	 * @param {boolean} [resumed] The attempt came back with the holder from the wallet (resume): an
+	 *                            attempt this browser does not hold is then reported as such.
+	 */
+	function poll( id, me, resumed, delay = 2000 ) {
 		window.setTimeout( async () => {
 			if ( me !== run ) {
 				return;
@@ -72,18 +80,58 @@
 					return;
 				}
 				if ( data.status === 'pending' ) {
-					poll( id, me );
+					poll( id, me, resumed );
 				} else if ( data.status === 'verified' ) {
 					complete( id, me );
+				} else if ( data.status === 'consumed' ) {
+					window.location.reload(); // Linked meanwhile from another tab of this browser: show it.
 				} else {
 					fail( new Error( cfg.i18n.error ) );
 				}
 			} catch ( error ) {
 				if ( me === run ) {
-					fail( error );
+					fail( resumed && error.code === 'bloclabs_ssi_unknown' ? new Error( cfg.i18n.unknown ) : error );
 				}
 			}
-		}, 2000 );
+		}, delay );
+	}
+	/**
+	 * The attempt a wallet on this device sent the holder back here to finish, as ReturnUrl in PHP
+	 * put it in the address, or null. The parameter is dropped from the address at once, with the
+	 * verifier's response code next to it, so that a reload or the back button does not replay it.
+	 * The id alone opens nothing: the status and complete routes still need this browser's binding
+	 * cookie and this account's session, which the fetches carry as always.
+	 */
+	function resumeId() {
+		const history = window.history;
+		if ( ! cfg.resumeParam || ! window.location || ! history || typeof history.replaceState !== 'function' ) {
+			return null;
+		}
+		let url;
+		try {
+			url = new URL( window.location.href );
+		} catch ( error ) {
+			return null;
+		}
+		const id = url.searchParams.get( cfg.resumeParam );
+		if ( id === null ) {
+			return null;
+		}
+		url.searchParams.delete( cfg.resumeParam );
+		url.searchParams.delete( 'response_code' );
+		try {
+			history.replaceState( history.state, '', url.href );
+		} catch ( error ) { /* A history the page may not write: the address keeps the parameter, and the attempt its single use. */ }
+		return /^[a-f0-9]{32}$/.test( id ) ? id : null;
+	}
+	/** Finishes an attempt this browser started and a wallet on this device answered: no new request, the outcome only. */
+	function resume( id ) {
+		stop();
+		const me = run;
+		start.disabled = true;
+		panel.hidden = false;
+		status.textContent = cfg.i18n.resuming;
+		poll( id, me, true, 0 );
 	}
 	start.addEventListener( 'click', async () => {
 		stop();
@@ -126,6 +174,10 @@
 			status.textContent = '';
 		}
 	} );
+	const returned = resumeId();
+	if ( returned ) {
+		resume( returned );
+	}
 	root.querySelectorAll( '[data-ssi-unlink]' ).forEach( ( button ) => {
 		button.addEventListener( 'click', async () => {
 			if ( ! window.confirm( cfg.i18n.confirm ) ) {

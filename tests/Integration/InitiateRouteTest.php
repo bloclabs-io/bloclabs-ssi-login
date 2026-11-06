@@ -10,6 +10,7 @@ declare(strict_types=1);
 namespace BlocLabs\SsiLogin\Tests\Integration;
 
 use BlocLabs\SsiLogin\Plugin;
+use BlocLabs\SsiLogin\Rest\ReturnUrl;
 use BlocLabs\SsiLogin\Support\ClientIp;
 use BlocLabs\SsiLogin\Tests\Integration\Support\VerifierFake;
 use BlocLabs\SsiLogin\Verifier\VerifierException;
@@ -102,6 +103,74 @@ final class InitiateRouteTest extends IntegrationTestCase {
 		$this->assertSame( 'Strict', $options['samesite'] );
 		$this->assertSame( '/', $options['path'] );
 		$this->assertArrayNotHasKey( 'domain', $options );
+	}
+
+	/**
+	 * A wallet on the holder's own device gets a way back (#96): the login page,
+	 * with the redirect validated here, naming the attempt. Wallets open https
+	 * links, so a plain-http site offers none unless it is a localhost test stack.
+	 */
+	public function test_tells_the_bridge_where_a_same_device_wallet_sends_the_holder_back(): void {
+		$plain = $this->dispatch( 'POST', '/initiate' );
+		$this->assert_http( 201, $plain );
+		$this->assertNull( VerifierFake::instance()->last_request?->return_url, 'the test site is plain http on example.org' );
+		$this->assertArrayNotHasKey( 'return_url', (array) VerifierFake::instance()->last_request?->to_array() );
+
+		update_option( 'home', 'https://login.example' );
+		update_option( 'siteurl', 'https://login.example' );
+		$opened = $this->dispatch( 'POST', '/initiate', array( 'redirect_to' => 'https://login.example/wp-admin/edit.php?post_type=page' ) );
+		$this->assert_http( 201, $opened );
+		$public_id = (string) $opened->get_data()['attempt'];
+		$request   = VerifierFake::instance()->last_request;
+		$return    = (string) $request?->return_url;
+		$this->assertSame( $return, $request?->to_array()['return_url'] ?? null );
+		$this->assertSame( 'https', wp_parse_url( $return, PHP_URL_SCHEME ) );
+		$this->assertSame( 'login.example', wp_parse_url( $return, PHP_URL_HOST ) );
+		$this->assertSame( '/wp-login.php', wp_parse_url( $return, PHP_URL_PATH ) );
+		parse_str( (string) wp_parse_url( $return, PHP_URL_QUERY ), $query );
+		$this->assertSame(
+			array(
+				'redirect_to'    => 'https://login.example/wp-admin/edit.php?post_type=page',
+				ReturnUrl::PARAM => $public_id,
+			),
+			$query,
+			'the page the attempt started on, naming the attempt by its public id only'
+		);
+		$this->assertArrayNotHasKey( 'return_url', $opened->get_data(), 'the browser gets it from the wallet, not from here' );
+
+		// An off-site redirect is dropped by wp_validate_redirect() at initiate, and so from the return URL (threat 12).
+		$foreign = $this->dispatch( 'POST', '/initiate', array( 'redirect_to' => 'https://evil.example/' ) );
+		$this->assert_http( 201, $foreign );
+		parse_str( (string) wp_parse_url( (string) VerifierFake::instance()->last_request?->return_url, PHP_URL_QUERY ), $query );
+		$this->assertSame( array( ReturnUrl::PARAM => (string) $foreign->get_data()['attempt'] ), $query );
+
+		// A localhost test stack may stay on plain http, as the bridge allows for it.
+		update_option( 'home', 'http://localhost:8080' );
+		update_option( 'siteurl', 'http://localhost:8080' );
+		$local = $this->dispatch( 'POST', '/initiate' );
+		$this->assert_http( 201, $local );
+		$this->assertSame(
+			'http://localhost:8080/wp-login.php?' . ReturnUrl::PARAM . '=' . $local->get_data()['attempt'],
+			VerifierFake::instance()->last_request?->return_url
+		);
+	}
+
+	/**
+	 * Behind a TLS proxy that hides HTTPS from PHP the return URL follows the
+	 * home URL's scheme, like the binding cookie, or wallets would not open it.
+	 */
+	public function test_the_return_url_is_https_behind_tls_termination(): void {
+		update_option( 'home', 'https://login.example' );
+		$this->assertFalse( is_ssl() );
+		$this->assertTrue( Plugin::instance()->settings()->site_is_https() );
+
+		$opened = $this->dispatch( 'POST', '/initiate' );
+
+		$this->assert_http( 201, $opened );
+		$return = (string) VerifierFake::instance()->last_request?->return_url;
+		$this->assertStringStartsWith( 'https://', $return );
+		$this->assertSame( '/wp-login.php', wp_parse_url( $return, PHP_URL_PATH ) );
+		$this->assertStringEndsWith( ReturnUrl::PARAM . '=' . $opened->get_data()['attempt'], $return );
 	}
 
 	public function test_per_ip_limit_counts_every_attempt(): void {

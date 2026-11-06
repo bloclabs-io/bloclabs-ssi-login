@@ -46,6 +46,9 @@ sequenceDiagram
 1. **Opens a verifier session** per login attempt: a cross-device OpenID4VP 1.0 session with the DCQL query named by
    WordPress, expiring at the attempt's `expires_at`, retained for a minute longer, and with a webhook back to the
    bridge. walt.id picks the OpenID4VP `nonce` itself; the attempt is bound by `correlation_id`, not by the nonce.
+   When WordPress names a `return_url`, the session carries it as walt.id's `redirects` (success and error alike),
+   so that a wallet on the same device, having posted its presentation, opens the page the attempt started on and
+   the browser finishes it; the URL must be `https` (plain `http` on `localhost` only) and is never logged.
    With `BRIDGE_DC_API_ORIGINS` set it opens a second session for the same attempt, of walt.id's flow type
    `dc_api_openid4vp`, bound to the login pages' origins, and returns its request as `dc_api` (walt.id's own
    `{digital: {requests}}` wrapper from `GET …/request`) with the public response route the login page posts the
@@ -181,6 +184,8 @@ walt.id `main` on 2026-11-03).
   file so an upgrade keeps working.
 - The bridge sets `expiration_date` (no wallet responses after the attempt's `expires_at`) and `retention_date`
   (walt.id discards the session, with the presented credential, a minute later).
+- The same-device return needs no verifier configuration: with `redirects` on the session, walt.id 1.2.0 answers the
+  wallet's `direct_post` with `redirect_uri`, the URL plus its own `response_code`, which WordPress ignores.
 
 ### Signed requests for phone wallets
 
@@ -259,3 +264,7 @@ It does not exercise a phone presentation, FireFly or WordPress.
 - The Digital Credentials API path is off unless `BRIDGE_DC_API_ORIGINS` is set. walt.id then builds the request
   unsigned with the answer in clear (`response_mode: dc_api`) unless its own configuration signs or encrypts; the
   bridge does not choose. It also costs a second verifier session, and two more verifier calls, per login attempt.
+- Returning the holder to the browser after a same-device presentation depends on the wallet honouring the
+  `redirect_uri` in the verifier's answer to its `direct_post` (OpenID4VP 1.0 §8.2). A wallet that ignores it leaves
+  the holder in the wallet; the page the attempt started on finishes it when the holder switches back by hand,
+  as long as the attempt has not expired.

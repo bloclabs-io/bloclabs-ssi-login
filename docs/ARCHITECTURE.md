@@ -58,7 +58,7 @@ flowchart TB
 
 | Layer | Component | Responsibility |
 |---|---|---|
-| Frontend | `LoginScreen`, `AssetManager`, `assets/js/login.js` | Injects the credential block on `wp-login.php`, renders the QR code and same-device link, polls, completes |
+| Frontend | `LoginScreen`, `AssetManager`, `assets/js/login.js` | Injects the credential block on `wp-login.php`, renders the QR code and same-device link, polls, completes; resumes the attempt a same-device wallet sent the holder back to (`ReturnUrl`) |
 | Auth | `Rest\*Controller`, `BrowserBinding`, `LoginFinalizer` | Nonced, cookie-bound endpoints; programmatic login with `wp_set_current_user()` and `wp_set_auth_cookie()` |
 | Session | `AttemptRepository`, `AttemptStatus` | Short-lived attempts in their own table, compare-and-set status changes |
 | Identity | `IdentityRepository`, `UserResolver` | Maps a verified subject to a user: link-only by default, optional provisioning |

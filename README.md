@@ -40,7 +40,8 @@ flowchart LR
    by an HttpOnly cookie and asks the verifier bridge for a presentation request.
 2. The browser asks the wallet through the [Digital Credentials API](https://www.w3.org/TR/digital-credentials/)
    where it has it and the bridge offers that path, and otherwise shows the `openid4vp://` request as a QR code
-   and a same-device link.
+   and a same-device link. A wallet opened through the link sends the holder back to the login page once it has
+   shared, and the page finishes the attempt it started.
 3. The wallet presents to the verifier. The verifier checks signatures, holder binding, issuer trust and
    revocation, then calls `attest(correlationId, result, subjectCommitment, presentationHash)` through FireFly.
 4. FireFly's contract listener picks up `LoginAttested` and its webhook subscription notifies WordPress.

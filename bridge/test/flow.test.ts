@@ -708,6 +708,89 @@ describe('Digital Credentials API', () => {
   });
 });
 
+describe('same-device return', () => {
+  let t: TestBridge;
+  let counter = 0;
+  const freshCorrelation = () => 'ee' + (counter++).toString(16).padStart(62, '0');
+  const ATTEMPT = '0123456789abcdef0123456789abcdef';
+  const RETURN_URL = `https://site.example/wp-login.php?redirect_to=https%3A%2F%2Fsite.example%2Fwp-admin%2F&bloclabs_ssi_attempt=${ATTEMPT}`;
+
+  before(async () => {
+    t = await startBridge({ BRIDGE_DC_API_ORIGINS: 'https://site.example', VERIFIER_PUBLIC_URL: 'https://verifier.example.com' });
+  });
+  after(async () => {
+    await t.close();
+  });
+
+  async function open(overrides: Record<string, unknown>): Promise<{ status: number; body: unknown; correlationId: string }> {
+    const body = requestBody({ correlation_id: freshCorrelation(), ...overrides }, t.clock.now);
+    const response = await t.call('POST', '/v1/presentation-requests', body);
+    return { status: response.status, body: response.body, correlationId: body['correlation_id'] as string };
+  }
+
+  it('asks the verifier to send a same-device wallet back to the page that started the attempt', async () => {
+    const logged = t.logs.length;
+    const response = await open({ return_url: RETURN_URL });
+    assert.equal(response.status, 201, JSON.stringify(response.body));
+
+    const crossDevice = t.verifier.createCalls.at(-2)!;
+    const dc = t.verifier.createCalls.at(-1)!;
+    assert.equal(crossDevice['flow_type'], 'cross_device');
+    assert.deepEqual(crossDevice['redirects'], { success_redirect_uri: RETURN_URL, error_redirect_uri: RETURN_URL }, 'walt.id answers the wallet with it as redirect_uri, with its response_code appended on success');
+    assert.equal(Object.hasOwn(crossDevice['core_flow'] as object, 'redirects'), false, 'a top-level field of the cross-device setup');
+    assert.equal(dc['flow_type'], 'dc_api_openid4vp');
+    assert.equal(Object.hasOwn(dc, 'redirects'), false, 'the browser that asks the wallet is already on the page');
+    assert.equal(Object.hasOwn(dc['core_flow'] as object, 'redirects'), false);
+
+    const lines = t.logs.slice(logged);
+    assert.ok(lines.some((line) => line.includes('"presentation request opened"') && line.includes('"returnUrl":true')));
+    assert.ok(!lines.some((line) => line.includes(ATTEMPT) || line.includes('wp-login.php')), 'the return URL names the attempt and is not logged');
+  });
+
+  it('sets no redirect when WordPress names no return URL, as before', async () => {
+    for (const overrides of [{}, { return_url: null }]) {
+      const logged = t.logs.length;
+      const response = await open(overrides);
+      assert.equal(response.status, 201, JSON.stringify(response.body));
+      const crossDevice = t.verifier.createCalls.at(-2)!;
+      assert.equal(crossDevice['flow_type'], 'cross_device');
+      assert.equal(Object.hasOwn(crossDevice, 'redirects'), false, 'walt.id 1.2.0 takes the field as optional, and the holder stays in the wallet');
+      assert.ok(t.logs.slice(logged).some((line) => line.includes('"presentation request opened"') && line.includes('"returnUrl":false')));
+    }
+  });
+
+  it('refuses a return URL that is not an absolute https web address, before anything is opened', async () => {
+    const refused: unknown[] = [
+      'javascript:alert(1)',
+      'openid4vp://authorize',
+      '/wp-login.php?bloclabs_ssi_attempt=' + ATTEMPT,
+      'wp-login.php',
+      'http://site.example/wp-login.php',
+      'https://user:secret@site.example/wp-login.php',
+      'https://site.example/?x=' + 'a'.repeat(2048),
+      '',
+      42,
+      { url: RETURN_URL },
+    ];
+    for (const bad of refused) {
+      const creates = t.verifier.createCalls.length;
+      const response = await open({ return_url: bad });
+      assert.equal(response.status, 400, JSON.stringify(bad));
+      assert.equal((response.body as { error: string }).error, 'invalid_request', JSON.stringify(bad));
+      assert.equal(t.verifier.createCalls.length, creates, `no verifier session for ${JSON.stringify(bad)}`);
+      const retry = await t.call('POST', '/v1/presentation-requests', requestBody({ correlation_id: response.correlationId }, t.clock.now));
+      assert.equal(retry.status, 201, 'the correlation id was not consumed by the refused request');
+    }
+  });
+
+  it('allows plain http on localhost for a test stack', async () => {
+    const local = `http://localhost:8080/wp-login.php?bloclabs_ssi_attempt=${ATTEMPT}`;
+    const response = await open({ return_url: local });
+    assert.equal(response.status, 201, JSON.stringify(response.body));
+    assert.deepEqual(t.verifier.createCalls.at(-2)!['redirects'], { success_redirect_uri: local, error_redirect_uri: local });
+  });
+});
+
 describe('trusted-issuer registry', () => {
   let t: TestBridge;
   let counter = 0x10000;
