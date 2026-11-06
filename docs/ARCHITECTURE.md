@@ -11,8 +11,9 @@
 **Non-goals**
 - Being a wallet or an issuer.
 - Replacing WordPress's password login. The credential block sits next to the password form.
-- Requiring a blockchain for the protocol itself. The chain is the audit and event backbone, not the trust root of
-  the credential.
+- Requiring a blockchain for the protocol itself. The chain is the audit and event backbone and, with the
+  trusted-issuer registry, the place where issuer trust is governed. It is not the cryptographic trust root of the
+  credential: a credential's signature is checked against the issuer's own key, off chain.
 
 ## Components
 
@@ -37,19 +38,22 @@ flowchart TB
     end
     subgraph FF[Hyperledger FireFly]
         API[Contract API<br/>ssi-login-attestor]
+        RAPI[Contract API<br/>trusted-issuer-registry]
         L[Contract listener]
         SUB[Webhook subscription]
     end
     CH[(EVM chain<br/>SsiLoginAttestor)]
+    REG[(EVM chain<br/>TrustedIssuerRegistry)]
 
     LP -->|1 initiate| R
     R -->|2 open request| BR
     WA -->|3 OpenID4VP| VE
-    BR -->|4 attest| API --> CH
-    CH --> L --> SUB -->|5 doorbell| R
-    AP -->|6 re-read event| FF
-    LP -->|7 status, complete| R
-    LF -->|8 fetch result| BR
+    BR -->|4 isTrusted? query| RAPI --> REG
+    BR -->|5 attest| API --> CH
+    CH --> L --> SUB -->|6 doorbell| R
+    AP -->|7 re-read event| FF
+    LP -->|8 status, complete| R
+    LF -->|9 fetch result| BR
 ```
 
 | Layer | Component | Responsibility |
@@ -60,7 +64,7 @@ flowchart TB
 | Identity | `IdentityRepository`, `UserResolver` | Maps a verified subject to a user: link-only by default, optional provisioning |
 | Orchestration | `FireFlyClient`, `AttestationProcessor`, `EventReconciler`, `ContractEventDecoder` | Consumes FireFly events (push, with a pull fallback), confirms them, applies them |
 | Verification | `VerifierClient` (`BridgeClient`) | Asks the sidecar to open a request and, later, for the verified subject |
-| Chain | `contracts/SsiLoginAttestor.sol` | Append-only `LoginAttested` events from authorised verifiers |
+| Chain | `contracts/SsiLoginAttestor.sol`, `contracts/TrustedIssuerRegistry.sol` | Append-only `LoginAttested` events from authorised verifiers; the owner-governed list of trusted `(issuer, vct)` pairs that the bridge queries through FireFly before it attests |
 
 ## Where each decision lives
 
@@ -71,6 +75,7 @@ flowchart TB
 | How does WordPress hear about results? | FireFly webhook as a doorbell, re-read from FireFly, with polling as a fallback | [ADR 0003](adr/0003-event-consumption.md) |
 | What does FireFly carry? | An on-chain `LoginAttested` event with commitments only | [ADR 0004](adr/0004-on-chain-attestation.md) |
 | What is the bridge built with? | TypeScript on Node 22 with no runtime dependencies, next to walt.id verifier-api2 in its own container | [ADR 0005](adr/0005-bridge-stack.md) |
+| Which issuers are trusted, for which credential types? | An owner-governed registry contract of `(issuer, vct)` pairs, read by the bridge through FireFly's query API before it attests; signatures, holder binding and revocation stay in the verifier | [ADR 0006](adr/0006-trusted-issuer-registry.md) |
 
 ## Data model
 
@@ -93,7 +98,7 @@ flowchart TB
 plus a short display label and the issuer DID, retained for the life of the link/account. The key is the plugin's own (`bloclabs_ssi_subject_key`, or
 `BLOCLABS_SSI_SUBJECT_KEY`), so rotating WordPress salts does not unlink every credential.
 
-Under `auto_provision`, the sanitized `name` claim becomes the new WordPress account's `display_name` and persists with that account. Other claims are fetched from the bridge at completion and dropped unless an extension stores them. Attempt rows are purged separately; their retention does not remove account or identity data.
+Under `auto_provision`, the sanitized `name` claim becomes the new WordPress account's `display_name`; without one, `given_name` and `family_name` do (joined, or the login when neither is disclosed), and those two also become the account's first and last name. These persist with that account. Other claims are fetched from the bridge at completion and dropped unless an extension stores them. Attempt rows are purged separately; their retention does not remove account or identity data.
 
 ## Trust boundaries
 
@@ -105,8 +110,12 @@ Under `auto_provision`, the sanitized `name` claim becomes the new WordPress acc
    must never be exposed publicly. An authenticating proxy is supported through an `Authorization` header setting.
 4. **Bridge → chain.** Only addresses the contract owner authorised can emit `LoginAttested`. The contract listener
    is bound to the contract address, and the decoder independently checks the configured listener and `attestor_address` against the log emitter.
+   With `FIREFLY_REGISTRY_API` set, the bridge also reads `TrustedIssuerRegistry.isTrusted(issuer, vct)` through
+   FireFly's query API before it attests, and attests a rejection for an untrusted pair. The read is an `eth_call`,
+   not a transaction. Only the registry's owner, an operator key that is never the bridge's signing key, can change
+   the list, and every change is an `IssuerSet` event ([ADR 0006](adr/0006-trusted-issuer-registry.md)).
 5. **Bridge's HTTP answer vs. its on-chain record.** At completion WordPress recomputes
-   `sha256(correlation_id ":" blinding_secret ":" subject_id)` and compares the presentation hash. This binds the subject and presentation hash only. WordPress does not recompute that hash from the HTTP claims: the issuer and disclosed claims passed to hooks are unattested HTTP data. Extensions must trust the authenticated bridge for those fields, and must not treat them as separately proven on chain.
+   `sha256(correlation_id ":" blinding_secret ":" subject_id)` and compares the presentation hash. This binds the subject and presentation hash only. WordPress does not recompute that hash from the HTTP claims: the issuer and disclosed claims passed to hooks are unattested HTTP data. Extensions must trust the authenticated bridge for those fields, and must not treat them as separately proven on chain. With the registry on, what the chain proves about the issuer is only this: a `LoginAttested` with `result = 1` was emitted after the bridge found the credential's `(issuer, vct)` trusted; the issuer string itself is not on chain.
 
 See [SECURITY-MODEL.md](SECURITY-MODEL.md) for threats and mitigations.
 
@@ -153,8 +162,8 @@ The flow does not assume a human. An agent with a wallet (a holder library and a
 request without a browser, and the attestation trail shows which agent logged in where. The roadmap adds:
 
 - a finalizer that returns an application token instead of setting a cookie, for agents;
-- an on-chain trusted-issuer registry, so the issuers of agent credentials are governed in the same place logins
-  are attested;
+- the on-chain trusted-issuer registry ([ADR 0006](adr/0006-trusted-issuer-registry.md)), so the issuers of agent
+  credentials are governed in the same place logins are attested;
 - links to emerging agent-identity work. [ERC-8004](https://eips.ethereum.org/EIPS/eip-8004) (Draft) lets an agent's
   registration list a DID. The DIF Trusted AI Agents WG, the W3C Agent Identity Registry CG and the OpenID AIIM CG
   are working in the same direction; none has a protocol to adopt yet.

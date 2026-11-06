@@ -49,6 +49,13 @@ final class StatusController extends BrowserController {
 			return $attempt;
 		}
 
+		if ( 'link' === $attempt->purpose ) {
+			$allowed = ProfileAuthorization::check( $request );
+			if ( is_wp_error( $allowed ) ) {
+				return $allowed;
+			}
+		}
+
 		if ( ! $attempt->status->is_terminal() ) {
 			if ( $attempt->is_expired() ) {
 				// Pending or verified, an attempt past its lifetime can no longer complete.

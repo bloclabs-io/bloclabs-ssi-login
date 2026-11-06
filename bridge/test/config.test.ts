@@ -11,8 +11,22 @@ describe('configuration', () => {
     assert.equal(config.firefly.namespace, 'default');
     assert.equal(config.firefly.apiName, 'ssi-login-attestor');
     assert.equal(config.firefly.authHeader, 'Bearer proxy');
+    assert.equal(config.firefly.registryApiName, undefined, 'no registry unless FIREFLY_REGISTRY_API is set');
     assert.deepEqual(Object.keys(config.queries), ['default', 'all']);
     assert.deepEqual(config.queries['default']?.dcql_query, QUERIES.default.dcql_query);
+  });
+
+  it('defaults to unsigned and accepts only explicit signing booleans', () => {
+    assert.equal(loadConfig(baseEnv()).verifierSignedRequest, false);
+    assert.equal(loadConfig(baseEnv({ VERIFIER_SIGNED_REQUEST: 'false' })).verifierSignedRequest, false);
+    assert.equal(loadConfig(baseEnv({ VERIFIER_SIGNED_REQUEST: 'true' })).verifierSignedRequest, true);
+    assert.throws(() => loadConfig(baseEnv({ VERIFIER_SIGNED_REQUEST: 'yes' })), /VERIFIER_SIGNED_REQUEST/);
+  });
+
+  it('turns the on-chain issuer check on with FIREFLY_REGISTRY_API', () => {
+    assert.equal(loadConfig(baseEnv({ FIREFLY_REGISTRY_API: ' trusted-issuer-registry ' })).firefly.registryApiName, 'trusted-issuer-registry');
+    assert.equal(Object.hasOwn(loadConfig(baseEnv({ FIREFLY_REGISTRY_API: '' })).firefly, 'registryApiName'), false, 'empty is unset');
+    assert.equal(Object.hasOwn(loadConfig(baseEnv({ FIREFLY_REGISTRY_API: '   ' })).firefly, 'registryApiName'), false, 'blank is unset');
   });
 
   it('refuses to start without the WordPress auth token', () => {
@@ -47,6 +61,37 @@ describe('configuration', () => {
     assert.throws(() => withQueries({ default: { dcql_query: { credentials: [{ id: 'a', format: 'dc+sd-jwt', meta: {}, claims: [{ path: [] }] }] } } }), /non-empty "path"/);
     assert.throws(() => withQueries({ 'bad name': QUERIES.default }), /query name "bad name"/);
     assert.throws(() => withQueries({ default: { ...QUERIES.default, policies: 'signature' } }), /policies must be an object/);
+  });
+
+  it('turns the Digital Credentials API path on only when origins are configured', () => {
+    assert.equal(loadConfig(baseEnv()).dcApi, null, 'off by default');
+    assert.equal(loadConfig(baseEnv({ BRIDGE_DC_API_ORIGINS: ' , ' })).dcApi, null);
+
+    const config = loadConfig(baseEnv({
+      BRIDGE_DC_API_ORIGINS: 'https://Site.example/, https://site.example https://wp.example:8443\nhttp://localhost:8080 http://wp.localhost',
+      VERIFIER_PUBLIC_URL: 'https://verifier.example.com/',
+    }));
+    assert.deepEqual(config.dcApi, {
+      origins: ['https://site.example', 'https://wp.example:8443', 'http://localhost:8080', 'http://wp.localhost'],
+      verifierPublicUrl: 'https://verifier.example.com',
+    });
+  });
+
+  it('refuses Digital Credentials API origins the browser would never report', () => {
+    const withOrigins = (origins: string, publicUrl: string | null) =>
+      loadConfig(baseEnv({ BRIDGE_DC_API_ORIGINS: origins, VERIFIER_PUBLIC_URL: publicUrl ?? undefined }));
+    const refused = (origins: string, message: RegExp, publicUrl: string | null = 'https://verifier.example.com') =>
+      assert.throws(() => withOrigins(origins, publicUrl), (error: unknown) => error instanceof ConfigError && message.test(error.message), origins);
+
+    refused('site.example', /is not an absolute URL/);
+    refused('http://site.example', /must be an https origin \(http only on localhost\)/);
+    refused('ftp://site.example', /must be an https origin/);
+    refused('https://site.example/wp-login.php', /without a path/);
+    refused('https://site.example/?x=1', /without a path/);
+    refused('https://site.example/#top', /without a path/);
+    refused('https://user:pw@site.example', /without a path/);
+    refused('https://site.example', /VERIFIER_PUBLIC_URL is required/, null);
+    refused('https://site.example', /VERIFIER_PUBLIC_URL must be an absolute http\(s\) URL/, 'verifier.example.com');
   });
 
   it('refuses to start with a query that could present several credentials', () => {

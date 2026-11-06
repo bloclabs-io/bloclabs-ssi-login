@@ -1,6 +1,14 @@
 # Contract regression tests
 
-Install the isolated Node dependencies outside the repository, then compile for
+CI runs all Solidity tests (attestor and registry) with Foundry v1.4.4, solc 0.8.28 and the Paris EVM target from `foundry.toml`:
+
+```sh
+forge test -vv
+```
+
+The registry suite covers exact issuer/vct pairs, grants and revocation, event keys and payloads, owner-only writes and two-step ownership. Tests run on an isolated in-memory EVM and use no external RPC or signing keys.
+
+For the older attestor-only Node runners, install the isolated Node dependencies outside the repository, then compile for
 the Paris EVM and run both Solidity regressions on an in-memory Ganache chain:
 
 ```sh

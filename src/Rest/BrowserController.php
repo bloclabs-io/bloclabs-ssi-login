@@ -53,7 +53,8 @@ abstract class BrowserController {
 	 */
 	protected function bound_attempt( string $public_id ) {
 		$attempt = 1 === preg_match( '/^[a-f0-9]{32}$/', $public_id ) ? $this->attempts->find_by_public_id( $public_id ) : null;
-		if ( null === $attempt || ! $this->binding->matches( $attempt ) ) {
+		if ( null === $attempt || ! $this->binding->matches( $attempt )
+			|| ( 'link' === $attempt->purpose && ( ! is_user_logged_in() || get_current_user_id() !== $attempt->link_user_id ) ) ) {
 			return new \WP_Error( 'bloclabs_ssi_unknown', __( 'Unknown login request.', 'bloclabs-ssi-login' ), array( 'status' => 404 ) );
 		}
 		return $attempt;

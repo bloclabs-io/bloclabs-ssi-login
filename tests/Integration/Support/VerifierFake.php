@@ -31,6 +31,13 @@ final class VerifierFake implements VerifierClient {
 
 	public ?string $presentation_hash = null;
 
+	/**
+	 * Disclosed claims of the next result; null for the default `name` claim.
+	 *
+	 * @var array<string, mixed>|null
+	 */
+	public ?array $claims = null;
+
 	public int $creates = 0;
 
 	public int $fetches = 0;
@@ -49,6 +56,7 @@ final class VerifierFake implements VerifierClient {
 		$this->subject_id        = null;
 		$this->issuer            = null;
 		$this->presentation_hash = null;
+		$this->claims            = null;
 		$this->creates           = 0;
 		$this->fetches           = 0;
 		$this->last_request      = null;
@@ -83,7 +91,7 @@ final class VerifierFake implements VerifierClient {
 			$this->subject_id ?? (string) $fixture['subject'],
 			$this->issuer ?? 'did:web:issuer.example',
 			strtolower( (string) ( $this->presentation_hash ?? $fixture['presentation_hash'] ) ),
-			array( 'name' => 'Ada' )
+			$this->claims ?? array( 'name' => 'Ada' )
 		);
 	}
 }

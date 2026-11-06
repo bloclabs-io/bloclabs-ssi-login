@@ -7,7 +7,7 @@ import { randomUUID } from 'node:crypto';
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from 'node:http';
 import type { AddressInfo } from 'node:net';
 
-import { Bridge } from '../src/bridge.js';
+import { Bridge, type BridgeOptions } from '../src/bridge.js';
 import { loadConfig, type Config } from '../src/config.js';
 import { FireFlyClient } from '../src/firefly.js';
 import { createLogger } from '../src/log.js';
@@ -150,9 +150,19 @@ export interface MockVerifier {
   url: string;
   createCalls: Array<Record<string, unknown>>;
   infoCalls: string[];
+  /** Session ids whose Digital Credentials API request was read (GET .../request). */
+  requestCalls: string[];
   sessions: Map<string, StoredSession>;
   /** When set, the next create answers this status with a walt.id style error body. */
   failNextCreate: number | null;
+  /** When set, the next `dc_api_openid4vp` create answers this status; cross-device creates are unaffected. */
+  failNextDcApiCreate: number | null;
+  /** When set, the next request read answers this status. */
+  failNextRequest: number | null;
+  /** When set, the next `dc_api_openid4vp` create answers only after this many milliseconds. */
+  stallNextDcApiCreateMs: number | null;
+  /** When set, the next request read answers only after this many milliseconds. */
+  stallNextRequestMs: number | null;
   /** How many of the next session reads answer 503. */
   failNextInfo: number;
   setSession(id: string, session: Record<string, unknown>): void;
@@ -165,7 +175,15 @@ export async function startMockVerifier(): Promise<MockVerifier> {
   const sessions = new Map<string, StoredSession>();
   const createCalls: Array<Record<string, unknown>> = [];
   const infoCalls: string[] = [];
-  const state = { failNextCreate: null as number | null, failNextInfo: 0 };
+  const requestCalls: string[] = [];
+  const state = {
+    failNextCreate: null as number | null,
+    failNextDcApiCreate: null as number | null,
+    failNextRequest: null as number | null,
+    stallNextDcApiCreateMs: null as number | null,
+    stallNextRequestMs: null as number | null,
+    failNextInfo: 0,
+  };
 
   const server = createServer(async (req, res) => {
     const path = req.url ?? '';
@@ -180,6 +198,45 @@ export async function startMockVerifier(): Promise<MockVerifier> {
       }
       const core = setup['core_flow'] as Record<string, unknown>;
       const id = typeof core['sessionId'] === 'string' ? core['sessionId'] : randomUUID();
+      if (setup['flow_type'] === 'dc_api_openid4vp') {
+        if (state.stallNextDcApiCreateMs !== null) {
+          const ms = state.stallNextDcApiCreateMs;
+          state.stallNextDcApiCreateMs = null;
+          await sleep(ms); // The session is still created: a slow verifier, not a broken one.
+        }
+        if (state.failNextDcApiCreate !== null) {
+          const status = state.failNextDcApiCreate;
+          state.failNextDcApiCreate = null;
+          json(res, status, { exception: true, status: 'Bad Request', message: 'simulated DC API failure' });
+          return;
+        }
+        // walt.id: no response URI and no state, the browser carries the answer; the nonce and the
+        // origins bind it. The authorization request is what GET .../request wraps for the browser.
+        sessions.set(id, {
+          setup,
+          session: {
+            id,
+            status: 'UNUSED',
+            attempted: false,
+            authorizationRequest: {
+              response_type: 'vp_token',
+              response_mode: 'dc_api',
+              nonce: 'verifier-nonce',
+              dcql_query: core['dcql_query'],
+              client_metadata: { vp_formats_supported: { 'dc+sd-jwt': { 'sd-jwt_alg_values': ['ES256'], 'kb-jwt_alg_values': ['ES256'] } } },
+              expected_origins: setup['expectedOrigins'],
+            },
+          },
+        });
+        json(res, 200, {
+          sessionId: id,
+          bootstrapAuthorizationRequestUrl: null,
+          fullAuthorizationRequestUrl: `${(setup['expectedOrigins'] as string[])[0]}?response_type=vp_token&response_mode=dc_api&nonce=verifier-nonce`,
+          creationTarget: null,
+          data: null,
+        });
+        return;
+      }
       sessions.set(id, {
         setup,
         session: {
@@ -196,6 +253,37 @@ export async function startMockVerifier(): Promise<MockVerifier> {
         creationTarget: null,
         data: null,
       });
+      return;
+    }
+    const request = /^\/verification-session\/([^/]+)\/request$/.exec(path);
+    if (req.method === 'GET' && request) {
+      const id = decodeURIComponent(request[1]!);
+      requestCalls.push(id);
+      if (state.stallNextRequestMs !== null) {
+        const ms = state.stallNextRequestMs;
+        state.stallNextRequestMs = null;
+        await sleep(ms);
+      }
+      if (state.failNextRequest !== null) {
+        const status = state.failNextRequest;
+        state.failNextRequest = null;
+        json(res, status, { exception: true, status: 'Internal Server Error', message: 'simulated failure' });
+        return;
+      }
+      const stored = sessions.get(id);
+      if (!stored) {
+        json(res, 404, { exception: true, status: 'Not Found', message: `Verification session not found: ${id}` });
+        return;
+      }
+      // Reading the request marks the session in use, as walt.id does (its webhook is not simulated here).
+      if (stored.session['status'] === 'UNUSED') {
+        stored.session = { ...stored.session, status: 'IN_USE' };
+      }
+      if (stored.setup['flow_type'] === 'dc_api_openid4vp') {
+        json(res, 200, { digital: { requests: [{ protocol: 'openid4vp-v1-unsigned', data: stored.session['authorizationRequest'] }] } });
+        return;
+      }
+      json(res, 200, stored.session['authorizationRequest']);
       return;
     }
     const info = /^\/verification-session\/([^/]+)\/info$/.exec(path);
@@ -224,12 +312,37 @@ export async function startMockVerifier(): Promise<MockVerifier> {
     url: url(),
     createCalls,
     infoCalls,
+    requestCalls,
     sessions,
     get failNextCreate() {
       return state.failNextCreate;
     },
     set failNextCreate(value: number | null) {
       state.failNextCreate = value;
+    },
+    get failNextDcApiCreate() {
+      return state.failNextDcApiCreate;
+    },
+    set failNextDcApiCreate(value: number | null) {
+      state.failNextDcApiCreate = value;
+    },
+    get failNextRequest() {
+      return state.failNextRequest;
+    },
+    set failNextRequest(value: number | null) {
+      state.failNextRequest = value;
+    },
+    get stallNextDcApiCreateMs() {
+      return state.stallNextDcApiCreateMs;
+    },
+    set stallNextDcApiCreateMs(value: number | null) {
+      state.stallNextDcApiCreateMs = value;
+    },
+    get stallNextRequestMs() {
+      return state.stallNextRequestMs;
+    },
+    set stallNextRequestMs(value: number | null) {
+      state.stallNextRequestMs = value;
     },
     get failNextInfo() {
       return state.failNextInfo;
@@ -285,7 +398,18 @@ export interface MockFireFly {
   /** Consumed one per invoke; when empty the invoke succeeds with a confirmed operation. */
   responses: ScriptedResponse[];
   transactionStatus: Map<string, string>;
+  /** Every `query/isTrusted` call on a trusted-issuer registry API. */
+  queries: FireFlyCall[];
+  /** Consumed one per registry query; when empty the registry answers from `trusted`. */
+  queryResponses: ScriptedResponse[];
+  /** Issuer and vct pairs the registry trusts, as `registryKey()` makes them. */
+  trusted: Set<string>;
   close(): Promise<void>;
+}
+
+/** The TrustedIssuerRegistry key of a pair, for `MockFireFly.trusted`. */
+export function registryKey(issuer: unknown, vct: unknown): string {
+  return `${String(issuer)}\n${String(vct)}`;
 }
 
 export function okOperation(): ScriptedAnswer {
@@ -301,9 +425,25 @@ export async function startMockFireFly(): Promise<MockFireFly> {
   const statusCalls: string[] = [];
   const responses: ScriptedResponse[] = [];
   const transactionStatus = new Map<string, string>();
+  const queries: FireFlyCall[] = [];
+  const queryResponses: ScriptedResponse[] = [];
+  const trusted = new Set<string>();
 
   const server = createServer(async (req, res) => {
     const path = req.url ?? '';
+    if (req.method === 'POST' && /\/query\/isTrusted$/.test(path)) {
+      const call: FireFlyCall = { path, headers: req.headers, body: JSON.parse(await readBody(req)) as Record<string, unknown> };
+      queries.push(call);
+      const scripted = queryResponses.shift();
+      if (scripted) {
+        const answer = await scripted(call);
+        json(res, answer.status, answer.body);
+        return;
+      }
+      const input = (call.body['input'] ?? {}) as Record<string, unknown>;
+      json(res, 200, { output: trusted.has(registryKey(input['issuer'], input['vct'])) });
+      return;
+    }
     if (req.method === 'POST' && /\/invoke\//.test(path)) {
       const call: FireFlyCall = { path, headers: req.headers, body: JSON.parse(await readBody(req)) as Record<string, unknown> };
       invokes.push(call);
@@ -336,6 +476,9 @@ export async function startMockFireFly(): Promise<MockFireFly> {
     statusCalls,
     responses,
     transactionStatus,
+    queries,
+    queryResponses,
+    trusted,
     close: () => closeServer(server),
   };
 }
@@ -353,7 +496,10 @@ export interface TestBridge {
   close(): Promise<void>;
 }
 
-export async function startBridge(envOverrides: Record<string, string | undefined> = {}): Promise<TestBridge> {
+export async function startBridge(
+  envOverrides: Record<string, string | undefined> = {},
+  bridgeOverrides: Partial<Pick<BridgeOptions, 'dcApiDeadlineMs'>> = {},
+): Promise<TestBridge> {
   const verifier = await startMockVerifier();
   const firefly = await startMockFireFly();
   const clock = { now: Date.parse('2026-11-03T12:00:00Z') };
@@ -370,6 +516,7 @@ export async function startBridge(envOverrides: Record<string, string | undefine
     now: () => clock.now,
     attestRetryDelaysMs: [5, 5],
     sessionReadRetryDelaysMs: [5, 5],
+    ...bridgeOverrides,
   });
   const server = createBridgeServer(bridge, config, log);
   await listen(server);

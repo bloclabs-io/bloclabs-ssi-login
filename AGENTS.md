@@ -37,6 +37,8 @@ The plugin is generic: on any site its UI follows that site's theme, and its def
 | Fonts | Barlow (body, inputs), Exo (headings, labels, buttons) |
 | Shapes | pill buttons (60px radius), cards and fields with 20px / 12px corners |
 
+Official logos (founder, 2026-11-06), in [`docs/brand/`](docs/brand/): `blocLabs-original-enhanced-transparent.png` (orange wordmark, 2169x725) and `blocLabs-enhanced-white-transparent.png` (white wordmark, for dark or orange backgrounds); `blocLabs-icon-orange-transparent.png` and `blocLabs-icon-white-transparent.png` (square cube icon, 106x93) for small slots such as wallet issuer logos and favicons. Use these files only; never redraw or recolour the logo.
+
 Contrast: white text on `#ff782d` is about 2.6:1 and fails WCAG AA, so orange buttons carry dark text (`#333` is about 4.8:1, `#000` about 8:1) or use orange as an accent only. Orange text on white also fails for body-size text.
 
 ## Tests

@@ -44,6 +44,7 @@ function main(): void {
       verifier: config.verifierUrl,
       firefly: config.firefly.url,
       queries: Object.keys(config.queries).join(','),
+      dcApiOrigins: config.dcApi ? config.dcApi.origins.join(',') : null,
     });
   });
 
