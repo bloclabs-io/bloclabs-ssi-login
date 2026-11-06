@@ -114,11 +114,13 @@ final class UserResolver {
 	 */
 	private function provision( PresentationResult $result, string $hash ) {
 		$login = 'ssi-' . substr( $hash, 0, 12 );
-		$data  = array(
-			'user_login'   => $login,
-			'user_pass'    => wp_generate_password( 64, true, true ),
-			'display_name' => isset( $result->claims['name'] ) && is_string( $result->claims['name'] ) ? sanitize_text_field( $result->claims['name'] ) : '',
-			'role'         => $this->safe_role(),
+		$data  = array_merge(
+			array(
+				'user_login' => $login,
+				'user_pass'  => wp_generate_password( 64, true, true ),
+				'role'       => $this->safe_role(),
+			),
+			self::name_fields( $result->claims, $login )
 		);
 
 		/**
@@ -170,6 +172,48 @@ final class UserResolver {
 
 		$this->provisioned[ $user_id ] = $created;
 		return $user_id;
+	}
+
+	/**
+	 * The name fields of a new account, from the disclosed claims.
+	 *
+	 * `name` is the display name when it is disclosed. SD-JWT VC identity
+	 * credentials, like the OpenID Connect claims they follow, usually carry
+	 * `given_name` and `family_name` and no `name`: then the display name is the
+	 * two joined, and the login when neither is disclosed. The first and last
+	 * name come from `given_name` and `family_name` whenever those are disclosed.
+	 * A claim that is not a string is ignored; e-mail is never used (see above).
+	 *
+	 * @param array<string, mixed> $claims Disclosed claims.
+	 * @param string               $login  The generated login, the display name of last resort.
+	 * @return array{display_name: string, first_name?: string, last_name?: string}
+	 */
+	public static function name_fields( array $claims, string $login ): array {
+		$fields = array( 'display_name' => self::text_claim( $claims, 'name' ) );
+		$given  = self::text_claim( $claims, 'given_name' );
+		$family = self::text_claim( $claims, 'family_name' );
+		if ( '' !== $given ) {
+			$fields['first_name'] = $given;
+		}
+		if ( '' !== $family ) {
+			$fields['last_name'] = $family;
+		}
+		if ( '' === $fields['display_name'] ) {
+			$fields['display_name'] = trim( $given . ' ' . $family );
+		}
+		if ( '' === $fields['display_name'] ) {
+			$fields['display_name'] = $login;
+		}
+		return $fields;
+	}
+
+	/**
+	 * A disclosed string claim as plain text; empty when it is absent or not a string.
+	 *
+	 * @param array<string, mixed> $claims
+	 */
+	private static function text_claim( array $claims, string $claim ): string {
+		return isset( $claims[ $claim ] ) && is_string( $claims[ $claim ] ) ? sanitize_text_field( $claims[ $claim ] ) : '';
 	}
 
 	/**
