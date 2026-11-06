@@ -1,3 +1,7 @@
 # Generated at first start: chain keys, the issuer key, passwords.
-# Never commit this directory.
+# Never commit these directories. signer/ is the attest key the FireFly
+# signer holds. registry-owner/ is the trust-list key, and no container
+# mounts it.
 runtime/
+signer/
+registry-owner/

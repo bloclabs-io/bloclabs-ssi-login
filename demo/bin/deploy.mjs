@@ -226,19 +226,19 @@ async function attestor(signer) {
 	return { address, interfaceId: publishedInterface, listenerId, signer };
 }
 
-async function registry(signer, did) {
+async function registry(owner, did) {
 	const api = await getApi('trusted-issuer-registry', 10);
 	let address = api?.location?.address || '';
 	if (!address) {
 		process.stdout.write('deploying the trusted-issuer registry\n');
-		address = await deployContract('TrustedIssuerRegistry', signer, []);
+		address = await deployContract('TrustedIssuerRegistry', owner, []);
 		address = (await publishApi('trusted-issuer-registry', 'TrustedIssuerRegistry', address)).address;
 	}
 	await call(`${ns('apis/trusted-issuer-registry/invoke/setIssuer')}?confirm=true`, {
 		method: 'POST',
 		headers: { 'content-type': 'application/json' },
 		body: JSON.stringify({
-			key: signer,
+			key: owner,
 			input: { issuer: did, vct: MEMBER_VCT, trusted: true },
 		}),
 	}, 30);
@@ -265,9 +265,14 @@ async function offer() {
 }
 
 const signer = readRuntime('signer.address');
+const owner = readRuntime('registry-owner.address');
+if (owner.toLowerCase() === signer.toLowerCase()) {
+	throw new Error('registry owner must not be the bridge signing key');
+}
 const did = readRuntime('issuer.did');
 const deployment = await attestor(signer);
-deployment.registryAddress = await registry(signer, did);
+deployment.registryAddress = await registry(owner, did);
+deployment.registryOwner = owner;
 deployment.registryApi = 'trusted-issuer-registry';
 writeFileSync(`${runtime}/deployment.json`, `${JSON.stringify(deployment, null, 2)}\n`);
 process.stdout.write(`attestor ${deployment.address}\n`);

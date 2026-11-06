@@ -14,6 +14,67 @@ if ! command -v docker >/dev/null 2>&1 || ! docker compose version >/dev/null 2>
 	exit 1
 fi
 
+owner_loaded=0
+
+owner_keystore_name() {
+	local addr
+	addr="$(tr -d '[:space:]' < runtime/registry-owner.address)"
+	addr="${addr#0x}"
+	addr="${addr#0X}"
+	printf '%s' "${addr,,}"
+}
+
+restart_ethsigner() {
+	local cid before attempt started status
+	cid="$(docker compose ps -q ethsigner)"
+	before="$(docker inspect -f '{{.State.StartedAt}}' "${cid}" 2>/dev/null || true)"
+	docker compose restart ethsigner >/dev/null
+	for attempt in $(seq 1 40); do
+		cid="$(docker compose ps -q ethsigner)"
+		started="$(docker inspect -f '{{.State.StartedAt}}' "${cid}" 2>/dev/null || true)"
+		status="$(docker inspect -f '{{if .State.Health}}{{.State.Health.Status}}{{end}}' "${cid}" 2>/dev/null || true)"
+		started="${started//$'\r'/}"
+		status="${status//$'\r'/}"
+		if [[ -n "${started}" && "${started}" != "${before}" && "${status}" == "healthy" ]]; then
+			return 0
+		fi
+		sleep 2
+	done
+	echo "The signer did not become healthy after a restart." >&2
+	docker compose logs ethsigner >&2 || true
+	return 1
+}
+
+# The registry owner is not the bridge's signing key. Its keystore lives in
+# ./registry-owner, which no service mounts. Copy it into the signer for the
+# deploy, then delete it so FireFly can no longer sign a trust-list change.
+load_registry_owner() {
+	local file
+	file="$(owner_keystore_name)"
+	if [[ ! -f "registry-owner/keystore/${file}" || ! -f "registry-owner/keystore/${file}.toml" || ! -f "registry-owner/password" ]]; then
+		echo "The registry owner key is missing. Reset with: docker compose down -v && rm -rf runtime signer registry-owner" >&2
+		return 1
+	fi
+	mkdir -p signer/keystore
+	owner_loaded=1
+	cp "registry-owner/keystore/${file}" "signer/keystore/${file}"
+	cp "registry-owner/keystore/${file}.toml" "signer/keystore/${file}.toml"
+	cp "registry-owner/password" "signer/registry-owner.password"
+	chmod 644 "signer/keystore/${file}" "signer/keystore/${file}.toml" "signer/registry-owner.password"
+	restart_ethsigner
+}
+
+unload_registry_owner() {
+	local file
+	if [[ "${owner_loaded}" -ne 1 ]]; then
+		return 0
+	fi
+	file="$(owner_keystore_name)"
+	rm -f "signer/keystore/${file}" "signer/keystore/${file}.toml" "signer/registry-owner.password"
+	owner_loaded=0
+	restart_ethsigner
+}
+
 wait_http() {
 	local url="$1"
 	local label="$2"
@@ -79,8 +140,16 @@ fi
 tr -d '\r' <"${compiled}" > runtime/contract.json
 rm -f "${compiled}"
 
+echo "Loading the registry owner into the signer..."
+trap unload_registry_owner EXIT
+load_registry_owner
+
 echo "Deploying the attestor and the trusted-issuer registry, then requesting a credential offer..."
 docker compose run --rm --no-deps --entrypoint node keys /opt/demo/deploy.mjs
+
+echo "Removing the registry owner from the signer..."
+unload_registry_owner
+trap - EXIT
 
 echo "Waiting for WordPress..."
 wordpress_ready=0
@@ -125,5 +194,5 @@ ${offer}
 5. In the wallet, Present: paste that address and approve.
 6. The site home page greets you as Ada Lovelace.
 
-To start over: docker compose down -v && rm -rf runtime
+To start over: docker compose down -v && rm -rf runtime signer registry-owner
 EOF

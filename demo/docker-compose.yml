@@ -14,9 +14,13 @@ services:
     restart: "no"
     environment:
       DEMO_RUNTIME: /runtime
+      DEMO_SIGNER: /signer
+      DEMO_REGISTRY_OWNER: /registry-owner
     volumes:
       - ./bin:/opt/demo:ro
       - ./runtime:/runtime
+      - ./signer:/signer
+      - ./registry-owner:/registry-owner
     command: ["node", "/opt/demo/init-keys.mjs"]
     networks: [demo]
 
@@ -57,7 +61,7 @@ services:
     command: ["-f", "/runtime/ffsigner.yaml"]
     volumes:
       - ./runtime:/runtime:ro
-      - ./runtime/signer:/data
+      - ./signer:/data
     healthcheck:
       test:
         - CMD
@@ -171,6 +175,8 @@ services:
       - wordpress_html:/var/www/html
       - ..:/var/www/html/wp-content/plugins/bloclabs-ssi-login:ro
       - ./wordpress/runtime-mask:/var/www/html/wp-content/plugins/bloclabs-ssi-login/demo/runtime:ro
+      - ./wordpress/signer-mask:/var/www/html/wp-content/plugins/bloclabs-ssi-login/demo/signer:ro
+      - ./wordpress/registry-owner-mask:/var/www/html/wp-content/plugins/bloclabs-ssi-login/demo/registry-owner:ro
       - ./wordpress/mu-plugins:/var/www/html/wp-content/mu-plugins:ro
       - ./wordpress/apache-deny.conf:/etc/apache2/conf-enabled/bloclabs-demo-deny.conf:ro
       - ./bin/wordpress-entrypoint.sh:/entrypoint.sh:ro
@@ -190,6 +196,9 @@ services:
     volumes:
       - wordpress_html:/var/www/html
       - ..:/var/www/html/wp-content/plugins/bloclabs-ssi-login:ro
+      - ./wordpress/runtime-mask:/var/www/html/wp-content/plugins/bloclabs-ssi-login/demo/runtime:ro
+      - ./wordpress/signer-mask:/var/www/html/wp-content/plugins/bloclabs-ssi-login/demo/signer:ro
+      - ./wordpress/registry-owner-mask:/var/www/html/wp-content/plugins/bloclabs-ssi-login/demo/registry-owner:ro
       - ./wordpress/mu-plugins:/var/www/html/wp-content/mu-plugins:ro
       - ./bin:/opt/demo:ro
       - ./runtime:/runtime:ro
