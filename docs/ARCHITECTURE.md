@@ -98,7 +98,7 @@ flowchart TB
 plus a short display label and the issuer DID, retained for the life of the link/account. The key is the plugin's own (`bloclabs_ssi_subject_key`, or
 `BLOCLABS_SSI_SUBJECT_KEY`), so rotating WordPress salts does not unlink every credential.
 
-Under `auto_provision`, the sanitized `name` claim becomes the new WordPress account's `display_name` and persists with that account. Other claims are fetched from the bridge at completion and dropped unless an extension stores them. Attempt rows are purged separately; their retention does not remove account or identity data.
+Under `auto_provision`, the sanitized `name` claim becomes the new WordPress account's `display_name`; without one, `given_name` and `family_name` do (joined, or the login when neither is disclosed), and those two also become the account's first and last name. These persist with that account. Other claims are fetched from the bridge at completion and dropped unless an extension stores them. Attempt rows are purged separately; their retention does not remove account or identity data.
 
 ## Trust boundaries
 
