@@ -15,7 +15,7 @@ defined( 'ABSPATH' ) || exit;
 	</button>
 
 	<div class="bloclabs-ssi__panel" data-ssi-panel hidden>
-		<p class="bloclabs-ssi__hint"><?php esc_html_e( 'Scan with your wallet app, or open it on this device.', 'bloclabs-ssi-login' ); ?></p>
+		<p class="bloclabs-ssi__hint" data-ssi-hint><?php esc_html_e( 'Scan with your wallet app, or open it on this device.', 'bloclabs-ssi-login' ); ?></p>
 		<div class="bloclabs-ssi__qr" data-ssi-qr role="img" aria-label="<?php esc_attr_e( 'QR code for your wallet', 'bloclabs-ssi-login' ); ?>"></div>
 		<p><a class="button bloclabs-ssi__open" data-ssi-open href="#" rel="noopener"><?php esc_html_e( 'Open wallet on this device', 'bloclabs-ssi-login' ); ?></a></p>
 		<p class="bloclabs-ssi__status" data-ssi-status role="status" aria-live="polite"></p>

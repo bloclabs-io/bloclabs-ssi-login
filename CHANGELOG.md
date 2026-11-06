@@ -2,6 +2,14 @@
 
 ## 0.1.0-dev (unreleased)
 
+- Same-device login through the browser's Digital Credentials API (#76). With `BRIDGE_DC_API_ORIGINS` and
+  `VERIFIER_PUBLIC_URL` set, the bridge opens a second walt.id session (`dc_api_openid4vp`, bound to the login
+  pages' origins) next to the QR code's and returns it as `dc_api`: the `requests` for `navigator.credentials.get`
+  and the verifier's `response_url`. Where the browser has the API, the login page asks the wallet through it on
+  the click, posts the answer to the verifier without cookies, and falls back to the QR code and wallet link when
+  the prompt is dismissed, unsupported or undeliverable; whichever session answers first is attested once under
+  the attempt's correlation id. Without the setting or the API nothing changes. docs/BRIDGE-API.md defines the
+  field.
 - Handoff labels use live PR draft/state data and an Actions-bot head checkpoint so replaced push jobs and delayed old handoffs cannot preserve an earlier approval (bloclabs-io/blocLabs-LearnPress-API-Extension#97).
 
 - Correct finality, webhook delivery, contract build and claim-retention documentation; add regression coverage for atomic state transitions, login ordering, cookie attributes and version-aware WordPress test installs (#33).

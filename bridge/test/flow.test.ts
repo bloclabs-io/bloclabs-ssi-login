@@ -429,3 +429,189 @@ describe('expiry', () => {
     t.clock.now = start;
   });
 });
+
+describe('Digital Credentials API', () => {
+  let t: TestBridge;
+  let counter = 0;
+  const freshCorrelation = () => 'dc' + (counter++).toString(16).padStart(62, '0');
+  const ORIGINS = 'https://site.example, http://localhost:8080';
+
+  before(async () => {
+    t = await startBridge({ BRIDGE_DC_API_ORIGINS: ORIGINS, VERIFIER_PUBLIC_URL: 'https://verifier.example.com/' });
+  });
+  after(async () => {
+    await t.close();
+  });
+  beforeEach(() => {
+    t.firefly.invokes.length = 0;
+    t.firefly.responses.length = 0;
+  });
+
+  interface Opened {
+    id: string;
+    correlationId: string;
+    dcApi: { requests: Array<{ protocol: string; data: Record<string, unknown> }>; response_url: string } | null;
+  }
+
+  async function open(): Promise<Opened> {
+    const body = requestBody({ correlation_id: freshCorrelation() }, t.clock.now);
+    const response = await t.call('POST', '/v1/presentation-requests', body);
+    assert.equal(response.status, 201, JSON.stringify(response.body));
+    const created = response.body as { id: string; dc_api: Opened['dcApi'] };
+    return { id: created.id, correlationId: body['correlation_id'] as string, dcApi: created.dc_api };
+  }
+
+  const dcSessionIdOf = (offer: NonNullable<Opened['dcApi']>): string =>
+    /\/verification-session\/([^/]+)\/response$/.exec(offer.response_url)![1]!;
+
+  it('opens a second, browser-bound session and hands back its request and response route', async () => {
+    const creates = t.verifier.createCalls.length;
+    const { id, dcApi } = await open();
+    assert.ok(dcApi, 'dc_api is set');
+    assert.equal(t.verifier.createCalls.length - creates, 2, 'one cross-device and one DC API session');
+
+    const crossDevice = t.verifier.createCalls.at(-2)!;
+    const dc = t.verifier.createCalls.at(-1)!;
+    assert.equal(crossDevice['flow_type'], 'cross_device');
+    assert.equal(dc['flow_type'], 'dc_api_openid4vp');
+    assert.deepEqual(dc['expectedOrigins'], ['https://site.example', 'http://localhost:8080']);
+    assert.equal(Object.hasOwn(dc, 'url_config'), false);
+
+    const dcId = dcSessionIdOf(dcApi);
+    assert.match(dcId, /^[0-9a-f-]{36}$/);
+    assert.notEqual(dcId, id, 'its own verifier session');
+    assert.equal(dcApi.response_url, `https://verifier.example.com/verification-session/${dcId}/response`);
+
+    const crossCore = crossDevice['core_flow'] as Record<string, unknown>;
+    const dcCore = dc['core_flow'] as Record<string, unknown>;
+    assert.equal(dcCore['sessionId'], dcId);
+    for (const key of ['dcql_query', 'policies', 'expiration_date', 'retention_date']) {
+      assert.deepEqual(dcCore[key], crossCore[key], `${key} is the same for both sessions`);
+    }
+    const crossWebhook = (crossCore['notifications'] as { webhook: { url: string; bearer_token: string } }).webhook;
+    const dcWebhook = (dcCore['notifications'] as { webhook: { url: string; bearer_token: string } }).webhook;
+    assert.equal(dcWebhook.url, `${t.url}/v1/verifier-callbacks/${dcId}`, 'rings the callback under its own id');
+    assert.equal(dcWebhook.bearer_token, crossWebhook.bearer_token, 'the request has one callback token');
+
+    assert.deepEqual(t.verifier.requestCalls.slice(-1), [dcId], 'the request is read from the DC API session only');
+    assert.equal(dcApi.requests.length, 1);
+    assert.equal(dcApi.requests[0]!.protocol, 'openid4vp-v1-unsigned');
+    const data = dcApi.requests[0]!.data;
+    assert.equal(data['response_mode'], 'dc_api');
+    assert.deepEqual(data['dcql_query'], QUERIES.default.dcql_query);
+    assert.deepEqual(data['expected_origins'], ['https://site.example', 'http://localhost:8080']);
+    assert.equal(Object.hasOwn(data, 'response_uri'), false, 'the browser, not a response URI, carries the answer');
+  });
+
+  it('settles the attempt from the DC API session and ignores the QR session afterwards', async () => {
+    const { id, correlationId, dcApi } = await open();
+    const dcId = dcSessionIdOf(dcApi!);
+    const vpToken = { login: [SD_JWT_PRESENTATION] };
+    t.verifier.setSession(dcId, successfulSession(dcId, { vpToken }));
+
+    assert.equal(await t.verifier.fireCallback(dcId, 'wrong-token-is-refused', 'not-the-token'), 401);
+    assert.equal(await t.verifier.fireCallback(dcId), 202);
+    await t.bridge.idle();
+
+    assert.equal(t.firefly.invokes.length, 1);
+    const input = t.firefly.invokes[0]!.body['input'] as Record<string, unknown>;
+    assert.equal(input['correlationId'], '0x' + correlationId, 'attested under the attempt, not the session');
+    assert.equal(input['result'], 1);
+    const result = await t.call('GET', `/v1/presentation-requests/${id}/result`);
+    assert.equal(result.status, 200, 'read under the request id WordPress holds');
+    const body = result.body as { subject_id: string; presentation_hash: string };
+    assert.equal(input['subjectCommitment'], '0x' + subjectCommitment(correlationId, BLINDING_SECRET, body.subject_id));
+    assert.equal(body.presentation_hash, presentationHash(vpToken));
+    assert.ok(t.logs.some((line) => line.includes('"decision attested"') && line.includes('"dcApi":true')));
+
+    // A wallet that scans the QR code after the fact changes nothing.
+    t.verifier.setSession(id, successfulSession(id));
+    assert.equal(await t.verifier.fireCallback(id), 202);
+    await t.bridge.idle();
+    assert.equal(t.firefly.invokes.length, 1, 'attested once');
+    assert.equal((await t.call('GET', `/v1/presentation-requests/${id}/result`)).status, 200);
+  });
+
+  it('still settles the attempt from the QR session, and attests a DC API rejection', async () => {
+    const viaQr = await open();
+    t.verifier.setSession(viaQr.id, successfulSession(viaQr.id));
+    await t.verifier.fireCallback(viaQr.id);
+    await t.bridge.idle();
+    assert.equal(t.firefly.invokes.length, 1);
+    assert.equal((await t.call('GET', `/v1/presentation-requests/${viaQr.id}/result`)).status, 200);
+
+    const declined = await open();
+    const dcId = dcSessionIdOf(declined.dcApi!);
+    t.verifier.setSession(dcId, failedSession(dcId, false));
+    await t.verifier.fireCallback(dcId, 'wallet_error_response_received');
+    await t.bridge.idle();
+    assert.equal(t.firefly.invokes.length, 2);
+    assert.equal((t.firefly.invokes[1]!.body['input'] as Record<string, unknown>)['result'], 2);
+    assert.deepEqual((await t.call('GET', `/v1/presentation-requests/${declined.id}/result`)).body, { error: 'rejected' });
+    // The DC API session's decision stands; the QR session cannot reopen the attempt.
+    t.verifier.setSession(declined.id, successfulSession(declined.id));
+    await t.verifier.fireCallback(declined.id);
+    await t.bridge.idle();
+    assert.equal(t.firefly.invokes.length, 2);
+  });
+
+  it('decides once when both sessions ring at the same time', async () => {
+    const { id, dcApi } = await open();
+    const dcId = dcSessionIdOf(dcApi!);
+    t.verifier.setSession(id, successfulSession(id));
+    t.verifier.setSession(dcId, successfulSession(dcId));
+    await Promise.all([t.verifier.fireCallback(id), t.verifier.fireCallback(dcId), t.verifier.fireCallback(id), t.verifier.fireCallback(dcId)]);
+    await t.bridge.idle();
+    assert.equal(t.firefly.invokes.length, 1);
+    assert.equal((await t.call('GET', `/v1/presentation-requests/${id}/result`)).status, 200);
+  });
+
+  it('does not let a session the verifier lost overturn a decision', async () => {
+    const { id, dcApi } = await open();
+    const dcId = dcSessionIdOf(dcApi!);
+    t.verifier.setSession(dcId, successfulSession(dcId));
+    await t.verifier.fireCallback(dcId);
+    await t.bridge.idle();
+    assert.equal((await t.call('GET', `/v1/presentation-requests/${id}/result`)).status, 200);
+
+    const stored = t.verifier.sessions.get(id)!;
+    t.verifier.sessions.delete(id);
+    await t.verifier.fireCallback(id, undefined, ((stored.setup['core_flow'] as Record<string, unknown>)['notifications'] as { webhook: { bearer_token: string } }).webhook.bearer_token).catch(() => undefined);
+    await t.bridge.idle();
+    assert.equal((await t.call('GET', `/v1/presentation-requests/${id}/result`)).status, 200, 'still verified');
+  });
+
+  it('falls back to the QR code alone when the DC API session cannot be opened or read', async () => {
+    t.verifier.failNextDcApiCreate = 400;
+    const notOpened = await open();
+    assert.equal(notOpened.dcApi, null);
+    assert.ok(t.logs.some((line) => line.includes('could not open a Digital Credentials API session')));
+    t.verifier.setSession(notOpened.id, successfulSession(notOpened.id));
+    await t.verifier.fireCallback(notOpened.id);
+    await t.bridge.idle();
+    assert.equal((await t.call('GET', `/v1/presentation-requests/${notOpened.id}/result`)).status, 200, 'the QR session still logs in');
+
+    t.verifier.failNextRequest = 500;
+    const notRead = await open();
+    assert.equal(notRead.dcApi, null);
+    assert.ok(t.logs.some((line) => line.includes('could not read the Digital Credentials API request')));
+    const dcSetup = t.verifier.createCalls.at(-1)!;
+    const dcId = (dcSetup['core_flow'] as Record<string, unknown>)['sessionId'] as string;
+    assert.equal(await t.verifier.fireCallback(dcId), 404, 'the orphaned session is forgotten');
+    t.verifier.setSession(notRead.id, successfulSession(notRead.id));
+    await t.verifier.fireCallback(notRead.id);
+    await t.bridge.idle();
+    assert.equal((await t.call('GET', `/v1/presentation-requests/${notRead.id}/result`)).status, 200);
+  });
+
+  it('sweeps both sessions of a request', async () => {
+    const start = t.clock.now;
+    const { id, dcApi } = await open();
+    const dcId = dcSessionIdOf(dcApi!);
+    t.clock.now = start + 180_000 + 60_000;
+    assert.ok(t.bridge.sweep() >= 1);
+    assert.equal(await t.verifier.fireCallback(dcId), 404);
+    assert.equal(await t.verifier.fireCallback(id), 404);
+    t.clock.now = start;
+  });
+});

@@ -150,9 +150,15 @@ export interface MockVerifier {
   url: string;
   createCalls: Array<Record<string, unknown>>;
   infoCalls: string[];
+  /** Session ids whose Digital Credentials API request was read (GET .../request). */
+  requestCalls: string[];
   sessions: Map<string, StoredSession>;
   /** When set, the next create answers this status with a walt.id style error body. */
   failNextCreate: number | null;
+  /** When set, the next `dc_api_openid4vp` create answers this status; cross-device creates are unaffected. */
+  failNextDcApiCreate: number | null;
+  /** When set, the next request read answers this status. */
+  failNextRequest: number | null;
   /** How many of the next session reads answer 503. */
   failNextInfo: number;
   setSession(id: string, session: Record<string, unknown>): void;
@@ -165,7 +171,8 @@ export async function startMockVerifier(): Promise<MockVerifier> {
   const sessions = new Map<string, StoredSession>();
   const createCalls: Array<Record<string, unknown>> = [];
   const infoCalls: string[] = [];
-  const state = { failNextCreate: null as number | null, failNextInfo: 0 };
+  const requestCalls: string[] = [];
+  const state = { failNextCreate: null as number | null, failNextDcApiCreate: null as number | null, failNextRequest: null as number | null, failNextInfo: 0 };
 
   const server = createServer(async (req, res) => {
     const path = req.url ?? '';
@@ -180,6 +187,40 @@ export async function startMockVerifier(): Promise<MockVerifier> {
       }
       const core = setup['core_flow'] as Record<string, unknown>;
       const id = typeof core['sessionId'] === 'string' ? core['sessionId'] : randomUUID();
+      if (setup['flow_type'] === 'dc_api_openid4vp') {
+        if (state.failNextDcApiCreate !== null) {
+          const status = state.failNextDcApiCreate;
+          state.failNextDcApiCreate = null;
+          json(res, status, { exception: true, status: 'Bad Request', message: 'simulated DC API failure' });
+          return;
+        }
+        // walt.id: no response URI and no state, the browser carries the answer; the nonce and the
+        // origins bind it. The authorization request is what GET .../request wraps for the browser.
+        sessions.set(id, {
+          setup,
+          session: {
+            id,
+            status: 'UNUSED',
+            attempted: false,
+            authorizationRequest: {
+              response_type: 'vp_token',
+              response_mode: 'dc_api',
+              nonce: 'verifier-nonce',
+              dcql_query: core['dcql_query'],
+              client_metadata: { vp_formats_supported: { 'dc+sd-jwt': { 'sd-jwt_alg_values': ['ES256'], 'kb-jwt_alg_values': ['ES256'] } } },
+              expected_origins: setup['expectedOrigins'],
+            },
+          },
+        });
+        json(res, 200, {
+          sessionId: id,
+          bootstrapAuthorizationRequestUrl: null,
+          fullAuthorizationRequestUrl: `${(setup['expectedOrigins'] as string[])[0]}?response_type=vp_token&response_mode=dc_api&nonce=verifier-nonce`,
+          creationTarget: null,
+          data: null,
+        });
+        return;
+      }
       sessions.set(id, {
         setup,
         session: {
@@ -196,6 +237,32 @@ export async function startMockVerifier(): Promise<MockVerifier> {
         creationTarget: null,
         data: null,
       });
+      return;
+    }
+    const request = /^\/verification-session\/([^/]+)\/request$/.exec(path);
+    if (req.method === 'GET' && request) {
+      const id = decodeURIComponent(request[1]!);
+      requestCalls.push(id);
+      if (state.failNextRequest !== null) {
+        const status = state.failNextRequest;
+        state.failNextRequest = null;
+        json(res, status, { exception: true, status: 'Internal Server Error', message: 'simulated failure' });
+        return;
+      }
+      const stored = sessions.get(id);
+      if (!stored) {
+        json(res, 404, { exception: true, status: 'Not Found', message: `Verification session not found: ${id}` });
+        return;
+      }
+      // Reading the request marks the session in use, as walt.id does (its webhook is not simulated here).
+      if (stored.session['status'] === 'UNUSED') {
+        stored.session = { ...stored.session, status: 'IN_USE' };
+      }
+      if (stored.setup['flow_type'] === 'dc_api_openid4vp') {
+        json(res, 200, { digital: { requests: [{ protocol: 'openid4vp-v1-unsigned', data: stored.session['authorizationRequest'] }] } });
+        return;
+      }
+      json(res, 200, stored.session['authorizationRequest']);
       return;
     }
     const info = /^\/verification-session\/([^/]+)\/info$/.exec(path);
@@ -224,12 +291,25 @@ export async function startMockVerifier(): Promise<MockVerifier> {
     url: url(),
     createCalls,
     infoCalls,
+    requestCalls,
     sessions,
     get failNextCreate() {
       return state.failNextCreate;
     },
     set failNextCreate(value: number | null) {
       state.failNextCreate = value;
+    },
+    get failNextDcApiCreate() {
+      return state.failNextDcApiCreate;
+    },
+    set failNextDcApiCreate(value: number | null) {
+      state.failNextDcApiCreate = value;
+    },
+    get failNextRequest() {
+      return state.failNextRequest;
+    },
+    set failNextRequest(value: number | null) {
+      state.failNextRequest = value;
     },
     get failNextInfo() {
       return state.failNextInfo;

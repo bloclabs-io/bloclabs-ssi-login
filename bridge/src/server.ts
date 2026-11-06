@@ -1,7 +1,8 @@
 /**
  * HTTP surface. Two routes for WordPress (docs/BRIDGE-API.md) behind the static
- * bearer token, one callback route for the verifier behind a per-request token,
- * and a health check. Everything else is 404.
+ * bearer token, one callback route for the verifier behind a per-request token
+ * (addressed by verifier session id: a request has one or two), and a health
+ * check. Everything else is 404.
  */
 
 import { createServer as createHttpServer, type IncomingMessage, type Server, type ServerResponse } from 'node:http';

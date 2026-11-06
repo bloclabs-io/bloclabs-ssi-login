@@ -45,17 +45,64 @@ Response `201`:
 {
   "id": "vr_01HF…",
   "wallet_url": "openid4vp://?client_id=x509_san_dns:verifier.example.com&request_uri=https%3A%2F%2Fverifier.example.com%2Fr%2Fvr_01HF",
-  "dc_api": null
+  "dc_api": {
+    "requests": [{"protocol": "openid4vp-v1-unsigned", "data": {"response_type": "vp_token", "response_mode": "dc_api", "nonce": "…", "dcql_query": {"…": "…"}, "client_metadata": {"…": "…"}}}],
+    "response_url": "https://verifier.example.com/verification-session/vr_01HF-dc/response"
+  }
 }
 ```
 - `id`: the bridge's id for the request, at most 191 characters. WordPress stores it and sends it back on the
   result route.
 - `wallet_url`: what the browser shows as a QR code and opens as a same-device link. Allowed schemes are
   `openid4vp` and `https` unless the site widens them.
-- `dc_api`: optional, reserved for the Digital Credentials API path (roadmap): the object to pass to
-  `navigator.credentials.get({digital: {requests: [...]}})`.
+- `dc_api`: the same request for the browser's [Digital Credentials API](https://www.w3.org/TR/digital-credentials/),
+  or `null` when the bridge cannot offer one (see [the Digital Credentials API path](#the-digital-credentials-api-path)
+  below). WordPress passes the object to the login page unchanged.
+  - `requests`: the `requests` of `navigator.credentials.get({digital: {requests}})`, each `{"protocol", "data"}` as
+    OpenID4VP 1.0 appendix A defines them (`openid4vp-v1-unsigned` with the request parameters as `data`, or
+    `openid4vp-v1-signed` with `{"request": "<JWT>"}`). A wallet answers one of them.
+  - `response_url`: where the login page posts the wallet's answer, as JSON `{"protocol", "data"}` (the
+    `DigitalCredential` the browser returned); `data` holds `vp_token`, or `response` when the answer is encrypted.
+    An `https` URL; the page refuses anything else, except plain `http` when the page itself is plain `http`
+    (a localhost test stack). The route must answer CORS for the login page's origin: the page sends no cookie
+    and no Authorization header, the origin binding in the presentation is the authentication.
 - *Reference bridge:* `id` is a UUID the bridge chose as the walt.id session id; `wallet_url` is walt.id's
-  `bootstrapAuthorizationRequestUrl` (the `request_uri` form); `dc_api` is always `null`.
+  `bootstrapAuthorizationRequestUrl` (the `request_uri` form); `dc_api` is set when `BRIDGE_DC_API_ORIGINS` is
+  configured, and `null` otherwise or when its second session could not be opened (logged, the QR code stands
+  alone).
+
+## The Digital Credentials API path
+
+Where the browser implements the Digital Credentials API (Chrome 141+ on Android and desktop, Safari 26 for mdoc)
+and the bridge answered with `dc_api`, the login page asks the wallet through the browser instead of showing the
+QR code, on the user activation of the "Log in with a digital credential" click, which the API requires. The
+browser hands the request to the wallet together with the page's origin, and the wallet binds its presentation
+to that origin (the key-binding JWT's `aud` is `origin:https://site.example`), so a request relayed to another
+page cannot log this one in: this is the same-device answer to threat 1 of [SECURITY-MODEL.md](SECURITY-MODEL.md).
+The page then posts the answer to `response_url` and keeps polling `/status` as in the cross-device flow; the
+decision reaches WordPress through the chain and `/complete` exactly as before, under the same `correlation_id`,
+so WordPress itself has no second code path. If the holder dismisses the browser's prompt, no wallet answers, a
+protocol is refused (`DigitalCredential.userAgentAllowsProtocol`), or the answer cannot be delivered, the page
+falls back to the QR code and the wallet link; "Cancel" aborts the prompt. Without the API, or with `dc_api`
+`null`, nothing changes.
+
+What the bridge must do for `dc_api`:
+
+1. Bind the request to the login page's origin (`expected_origins`, configured, never taken from the request),
+   and verify the holder binding against that origin, not against a response URI.
+2. Treat the browser-bound request and the QR code as one attempt: the first answer decides, is attested once
+   under the attempt's `correlation_id` (step 4 and 5 below), and the other request can no longer change the
+   outcome. The result route reads the same way whichever path answered.
+3. Keep the browser-facing response route on the public host with the OpenID4VP endpoints, answering CORS for
+   the login page's origin only; it needs no bridge credential, and the login page sends none.
+
+*Reference bridge:* a second walt.id session of flow type `dc_api_openid4vp` per request, with the same query,
+expiry, retention and webhook as the cross-device one, bound to `BRIDGE_DC_API_ORIGINS`; the request is walt.id's
+own wrapper from `GET /verification-session/{id}/request` (`{"digital": {"requests": [...]}}`), unsigned with the
+response in clear (`response_mode: dc_api`) unless walt.id's configuration signs or encrypts, and `response_url`
+is `VERIFIER_PUBLIC_URL/verification-session/{id}/response`, walt.id's response route, which takes the JSON
+answer and allows every origin in CORS (1.2.0). Either session's webhook rings the bridge under that session's
+id; whichever settles first is attested, with `dcApi: true` in the log line when it was the browser's session.
 
 ## `GET /v1/presentation-requests/{id}/result`
 
@@ -116,10 +163,12 @@ results for at least the attempt lifetime plus a minute, then delete them.
 
 ## Verifier callbacks (reference bridge)
 
-walt.id posts every session update to `POST /v1/verifier-callbacks/{id}` on the bridge, with a bearer token the
-bridge generated for that session. The bridge treats the call as a doorbell: it ignores the body, re-reads the
-session with `GET /verification-session/{id}/info`, and acts only on `SUCCESSFUL` or `FAILED`. The route is for
-the verifier alone and sits on the private network with the two WordPress routes.
+walt.id posts every session update to `POST /v1/verifier-callbacks/{session}` on the bridge, with a bearer token
+the bridge generated for that request; `{session}` is the verifier session id, the request's own id for the
+cross-device session and a second id for its Digital Credentials API session. The bridge treats the call as a
+doorbell: it ignores the body, re-reads the session with `GET /verification-session/{session}/info`, and acts
+only on `SUCCESSFUL` or `FAILED`. The route is for the verifier alone and sits on the private network with the
+two WordPress routes.
 
 ## Choosing a verifier
 
