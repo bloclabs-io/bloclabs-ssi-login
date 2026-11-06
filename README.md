@@ -76,10 +76,13 @@ composer install
 composer test    # PHPUnit
 composer test:integration   # WordPress integration suite (PHPUnit 9, needs MySQL)
 WP_MULTISITE=1 composer test:integration   # the same suite on a multisite network
+npm install && npm run test:wp-env   # the same suite in Docker: WordPress 6.6.10 release zip, single site and multisite
 composer phpcs   # WordPress coding standards
 npm install && npm run vendor   # optional: copies the QR encoder into assets/vendor/
 cd bridge && npm ci && npm test  # the verifier bridge (Node 22): build and tests
 ```
+
+`npm run test:wp-env` needs Docker and Node.js 22.13 or newer. The first start downloads the WordPress 6.6.10 release zip named in `.wp-env.json`. It does not clone the WordPress git repository.
 
 Without PHP locally: `docker run --rm -v "$PWD:/app" -w /app composer:2 sh -c "composer install && composer test"`.
 
@@ -89,7 +92,7 @@ Without PHP locally: `docker run --rm -v "$PWD:/app" -w /app composer:2 sh -c "c
 - **0.2** Reference verifier bridge on [walt.id verifier-api2](https://github.com/walt-id/waltid-identity)
   (built: [`bridge/`](bridge/)), and a one-command Docker demo (WordPress, FireFly, Besu, verifier) (open).
 - **0.3** "Link a credential" on the profile screen; same-device login through the browser's
-  [Digital Credentials API](https://www.w3.org/TR/digital-credentials/); integration tests on `wp-env`, in addition to the current CI suite.
+  [Digital Credentials API](https://www.w3.org/TR/digital-credentials/).
 - **0.4** On-chain trusted-issuer registry; agent login that issues an application token instead of a cookie.
 - **1.0** External security review, WordPress.org listing (founder decision).
 

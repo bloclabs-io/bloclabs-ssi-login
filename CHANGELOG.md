@@ -2,7 +2,7 @@
 
 ## 0.1.0-dev (unreleased)
 
-- `npm run test:wp-env` runs the WordPress integration suite in wp-env (WordPress 6.6.10 on PHP 8.3, single site and multisite). Pull requests run that job as well as the existing MySQL integration jobs (#68).
+- `npm run test:wp-env` runs the WordPress integration suite in wp-env (the WordPress 6.6.10 release zip on PHP 8.3, single site and multisite). The first start downloads that zip instead of cloning the WordPress git repository. Pull requests run that job as well as the existing MySQL integration jobs (#68).
 - ADR 0006: issuer trust moves from the bridge's walt.id `allowed-issuer` policy to an owner-governed on-chain
   `TrustedIssuerRegistry` of `(issuer, vct)` pairs, which the bridge queries through FireFly before it attests, with
   what stays off chain (signatures, holder binding, revocation) and the migration; ARCHITECTURE.md and

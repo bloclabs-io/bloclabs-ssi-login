@@ -17,6 +17,6 @@ Thanks for helping. A few rules keep a login plugin safe to change.
    npm run test:wp-env
    ```
 
-   That starts the WordPress 6.6.10 environment in `.wp-env.json` and runs `tests/Integration` inside it, once as a single site and once with `WP_MULTISITE=1`. It is the same suite as `composer test:integration`. Pull requests run it as the Integration (wp-env) job. The MySQL integration jobs are separate and unchanged.
+   That starts the WordPress 6.6.10 environment in `.wp-env.json` and runs `tests/Integration` inside it, once as a single site and once with `WP_MULTISITE=1`. Core is the release zip (`https://wordpress.org/wordpress-6.6.10.zip`), so the first start downloads that archive instead of cloning the WordPress git repository. It is the same suite as `composer test:integration`. Pull requests run it as the Integration (wp-env) job. The MySQL integration jobs are separate and unchanged.
 
 By contributing you agree that your work is licensed under GPL-2.0-or-later.

@@ -2,8 +2,9 @@
 # Runs the WordPress integration suite inside wp-env.
 #
 # On the host this starts the environment from .wp-env.json and runs this
-# script again in the cli container. WordPress 6.6.10 is the core that
-# wp-phpunit and the MySQL CI job already use. The suite keeps its own
+# script again in the cli container. Core is the WordPress 6.6.10 release zip,
+# the same version wp-phpunit and the MySQL CI job already use, so the first
+# start does not clone the WordPress git repository. The suite keeps its own
 # wptests_ tables, so it does not drop the site wp-env installed.
 set -euo pipefail
 
@@ -31,7 +32,7 @@ fi
 composer install --no-interaction --no-progress --prefer-dist
 composer install --no-interaction --no-progress --prefer-dist --working-dir=tools/phpunit9
 
-php -r 'require "/var/www/html/wp-includes/version.php"; if (!isset($wp_version) || "6.6.10" !== $wp_version) { fwrite(STDERR, "wp-env is serving WordPress " . ($wp_version ?? "unknown") . "; .wp-env.json and wp-phpunit pin 6.6.10.\n"); exit(1); }'
+php -r 'require "/var/www/html/wp-includes/version.php"; if (!isset($wp_version) || "6.6.10" !== $wp_version) { fwrite(STDERR, "wp-env is serving WordPress " . ($wp_version ?? "unknown") . "; .wp-env.json pins the 6.6.10 release zip.\n"); exit(1); }'
 
 # wp-env sets the database user, password and name on the cli container.
 # It does not set WORDPRESS_DB_HOST; the compose service is named mysql.
