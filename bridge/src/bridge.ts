@@ -23,7 +23,7 @@ import type { AttestInput, AttestOutcome, FireFlyClient } from './firefly.js';
 import { FireFlyError } from './firefly.js';
 import type { Logger } from './log.js';
 import type { BridgeRequest, RequestStore } from './store.js';
-import { RESULT_GRACE_MS, sessionIdsOf } from './store.js';
+import { RESULT_GRACE_MS } from './store.js';
 import type { DcApiRequest, Evaluation, VerifierClient } from './verifier.js';
 import { VerifierError, buildDcApiSessionSetup, buildSessionSetup, evaluateSession } from './verifier.js';
 
@@ -53,6 +53,13 @@ export interface BridgeOptions {
   /** Waits between attempts to read a verifier session after a transient failure. */
   sessionReadRetryDelaysMs?: number[];
   sleep?: (ms: number) => Promise<void>;
+  /**
+   * How long after a presentation request arrived its optional Digital Credentials
+   * API session may still be worked on. WordPress waits five seconds for the whole
+   * answer (BridgeClient), and the QR code must reach it within that even when the
+   * verifier is slow: past this point the extra session is given up, not awaited.
+   */
+  dcApiDeadlineMs?: number;
 }
 
 /** The `dc_api` object of docs/BRIDGE-API.md: what the browser passes to the wallet, and where it posts the answer. */
@@ -69,6 +76,7 @@ export interface CreatedRequest {
 
 const MAX_LIFETIME_MS = 24 * 60 * 60 * 1000;
 const MAX_NONCE_LENGTH = 512;
+const DC_API_DEADLINE_MS = 2_000;
 
 export class Bridge {
   private readonly config: Config;
@@ -80,6 +88,7 @@ export class Bridge {
   private readonly attestRetryDelaysMs: number[];
   private readonly sessionReadRetryDelaysMs: number[];
   private readonly sleep: (ms: number) => Promise<void>;
+  private readonly dcApiDeadlineMs: number;
   private readonly checks = new Map<string, { again: boolean }>();
   private idleWaiters: Array<() => void> = [];
 
@@ -93,6 +102,7 @@ export class Bridge {
     this.attestRetryDelaysMs = options.attestRetryDelaysMs ?? [1_000, 3_000];
     this.sessionReadRetryDelaysMs = options.sessionReadRetryDelaysMs ?? [500, 2_000];
     this.sleep = options.sleep ?? ((ms) => new Promise((resolve) => setTimeout(resolve, ms)));
+    this.dcApiDeadlineMs = options.dcApiDeadlineMs ?? DC_API_DEADLINE_MS;
   }
 
   /** POST /v1/presentation-requests */
@@ -156,8 +166,12 @@ export class Bridge {
       throw new HttpError(502, 'verifier_unavailable');
     }
 
-    // The Digital Credentials API session is an extra: the QR code works without it.
-    const dcApiSessionId = this.config.dcApi ? await this.openDcApiSession(this.config.dcApi, id, query, queryName, timing, callbackToken) : null;
+    // The Digital Credentials API session is an extra: the QR code works without it, and
+    // must not wait for it. Both of its verifier calls share what is left of the deadline.
+    const dcApiDeadline = now + this.dcApiDeadlineMs;
+    const dcApiSessionId = this.config.dcApi
+      ? await this.openDcApiSession(this.config.dcApi, id, query, queryName, timing, callbackToken, dcApiDeadline)
+      : null;
 
     const request: BridgeRequest = {
       id,
@@ -170,13 +184,13 @@ export class Bridge {
       callbackToken,
       dcApi: dcApiSessionId === null ? null : { sessionId: dcApiSessionId },
       state: 'pending',
-      recheck: false,
+      recheck: new Set(),
       result: null,
       attestation: null,
     };
     // Stored before the request is read: reading it rings the callback, which must find the request.
     this.store.add(request);
-    const dcApi = await this.dcApiOffer(request);
+    const dcApi = await this.dcApiOffer(request, dcApiDeadline);
     this.log.info('presentation request opened', { id, query: queryName, expiresAt: new Date(expiresAt).toISOString(), dcApi: dcApi !== null });
     return { id, wallet_url: created.walletUrl, dc_api: dcApi };
   }
@@ -184,7 +198,8 @@ export class Bridge {
   /**
    * Opens the `dc_api_openid4vp` session of a request: the same query and lifetime,
    * bound to the login pages' origins, ringing the same callback under its own id.
-   * A failure is logged and leaves the request with its cross-device session only.
+   * A failure, or no time left before `deadline`, is logged and leaves the request
+   * with its cross-device session only.
    */
   private async openDcApiSession(
     dcApi: DcApiConfig,
@@ -193,7 +208,13 @@ export class Bridge {
     queryName: string,
     timing: { expiresAt: Date; retainUntil: Date },
     callbackToken: string,
+    deadline: number,
   ): Promise<string | null> {
+    const left = deadline - this.now();
+    if (left <= 0) {
+      this.log.warn('no time left to open a Digital Credentials API session, the QR code stands alone', { id, query: queryName });
+      return null;
+    }
     const sessionId = newRequestId();
     const setup = buildDcApiSessionSetup({
       id: sessionId,
@@ -204,7 +225,7 @@ export class Bridge {
       origins: dcApi.origins,
     });
     try {
-      const created = await this.verifier.createDcApiSession(setup);
+      const created = await this.verifier.createDcApiSession(setup, left);
       if (created !== sessionId) {
         this.log.error('the verifier ignored the requested Digital Credentials API session id', { id, dcSession: sessionId, query: queryName });
         return null;
@@ -216,20 +237,29 @@ export class Bridge {
     }
   }
 
-  /** The browser's half of the Digital Credentials API session, or null when the request has none. */
-  private async dcApiOffer(request: BridgeRequest): Promise<DcApiOffer | null> {
+  /**
+   * The browser's half of the Digital Credentials API session, or null when the
+   * request has none, or its request could not be read before `deadline`.
+   */
+  private async dcApiOffer(request: BridgeRequest, deadline: number): Promise<DcApiOffer | null> {
     if (!request.dcApi || !this.config.dcApi) {
       return null;
     }
     const sessionId = request.dcApi.sessionId;
+    const left = deadline - this.now();
+    if (left <= 0) {
+      // Nobody will ever answer that session: forget it, so a callback for it cannot touch the request.
+      this.store.dropDcApiSession(request);
+      this.log.warn('no time left to read the Digital Credentials API request, the QR code stands alone', { id: request.id, dcSession: sessionId });
+      return null;
+    }
     try {
-      const requests = await this.verifier.getDcApiRequests(sessionId);
+      const requests = await this.verifier.getDcApiRequests(sessionId, left);
       return {
         requests,
         response_url: `${this.config.dcApi.verifierPublicUrl}/verification-session/${encodeURIComponent(sessionId)}/response`,
       };
     } catch (error) {
-      // Nobody will ever answer that session: forget it, so a callback for it cannot touch the request.
       this.store.dropDcApiSession(request);
       this.log.error('could not read the Digital Credentials API request, the QR code stands alone', { id: request.id, dcSession: sessionId, error: (error as Error).message });
       return null;
@@ -279,8 +309,9 @@ export class Bridge {
       this.log.debug('expired requests deleted', { count: removed });
     }
     for (const request of this.store.needingRecheck()) {
-      request.recheck = false;
-      for (const sessionId of sessionIdsOf(request)) {
+      const sessions = [...request.recheck];
+      request.recheck.clear();
+      for (const sessionId of sessions) {
         this.scheduleCheck(sessionId);
       }
     }
@@ -352,14 +383,14 @@ export class Bridge {
         this.log.error('the verifier no longer has the session', fields);
         return;
       }
-      request.recheck = true;
+      request.recheck.add(sessionId);
       this.log.warn('could not read the verifier session, will try again on the next sweep', { ...fields, error: (error as Error).message });
       return;
     }
     if (request.state !== 'pending') {
       return;
     }
-    request.recheck = false;
+    request.recheck.delete(sessionId);
     const evaluation = evaluateSession(session, this.config.queries[request.query]!);
     if (evaluation.kind === 'undecided') {
       this.log.debug('verifier session still undecided', { ...fields, status: evaluation.status });

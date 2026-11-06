@@ -50,8 +50,9 @@ sequenceDiagram
    `dc_api_openid4vp`, bound to the login pages' origins, and returns its request as `dc_api` (walt.id's own
    `{digital: {requests}}` wrapper from `GET …/request`) with the public response route the login page posts the
    browser's answer to. The holder answers one of the two; the first decision settles the attempt and the other
-   session can no longer change it. If the second session cannot be opened, the error is logged and `dc_api` is
-   `null`: the QR code stands alone.
+   session can no longer change it. If the second session cannot be opened and read within two seconds of the
+   request arriving (WordPress waits five seconds for the whole answer, and the QR code must not be late for an
+   extra), the error is logged and `dc_api` is `null`: the QR code stands alone.
 2. **Treats the verifier's webhook as a doorbell.** Every session update makes the bridge re-read the session from the
    verifier; the posted body is never trusted. The callback route is authenticated with a random bearer token the
    bridge gave the verifier for that request's sessions only; each session rings under its own id.

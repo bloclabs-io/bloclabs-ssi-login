@@ -46,8 +46,12 @@ export interface BridgeRequest {
   /** Set while the request also has a `dc_api_openid4vp` session; either session may settle it. */
   dcApi: DcApiSession | null;
   state: RequestState;
-  /** A callback arrived but the verifier session could not be read: the next sweep tries again. */
-  recheck: boolean;
+  /**
+   * Verifier sessions of this request whose last callback could not be acted on
+   * (the session could not be read): the next sweep reads each of them again.
+   * Kept per session, so a good read of one session cannot forget the other's retry.
+   */
+  recheck: Set<string>;
   result: PresentationResult | null;
   attestation: AttestationRecord | null;
 }
@@ -113,6 +117,7 @@ export class RequestStore {
   dropDcApiSession(request: BridgeRequest): void {
     if (request.dcApi) {
       this.sessions.delete(request.dcApi.sessionId);
+      request.recheck.delete(request.dcApi.sessionId);
       request.dcApi = null;
     }
   }
@@ -123,7 +128,7 @@ export class RequestStore {
 
   /** Pending requests whose last callback could not be acted on. */
   needingRecheck(): BridgeRequest[] {
-    return [...this.requests.values()].filter((request) => request.state === 'pending' && request.recheck);
+    return [...this.requests.values()].filter((request) => request.state === 'pending' && request.recheck.size > 0);
   }
 
   /** Deletes requests past their lifetime plus grace, and forgets correlation ids older than a day. */

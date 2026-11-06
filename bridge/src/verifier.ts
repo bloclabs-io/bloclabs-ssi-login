@@ -99,9 +99,12 @@ export class VerifierClient {
     return { sessionId, walletUrl };
   }
 
-  /** Opens a `dc_api_openid4vp` session; it has no wallet URL, the browser carries the request. */
-  async createDcApiSession(setup: Record<string, unknown>): Promise<string> {
-    const body = await this.call('POST', '/verification-session/create', setup);
+  /**
+   * Opens a `dc_api_openid4vp` session; it has no wallet URL, the browser carries
+   * the request. `timeoutMs` caps this call below the client's usual timeout.
+   */
+  async createDcApiSession(setup: Record<string, unknown>, timeoutMs?: number): Promise<string> {
+    const body = await this.call('POST', '/verification-session/create', setup, timeoutMs);
     const sessionId = body['sessionId'];
     if (typeof sessionId !== 'string' || sessionId === '') {
       throw new VerifierError('The verifier answered without a session id', false);
@@ -116,10 +119,10 @@ export class VerifierClient {
   /**
    * The Digital Credentials API request of a `dc_api_openid4vp` session, as walt.id
    * wraps it for the browser. Reading it marks the session in use, which is what
-   * happens next anyway.
+   * happens next anyway. `timeoutMs` caps this call below the client's usual timeout.
    */
-  async getDcApiRequests(id: string): Promise<DcApiRequest[]> {
-    const body = await this.call('GET', `/verification-session/${encodeURIComponent(id)}/request`);
+  async getDcApiRequests(id: string, timeoutMs?: number): Promise<DcApiRequest[]> {
+    const body = await this.call('GET', `/verification-session/${encodeURIComponent(id)}/request`, undefined, timeoutMs);
     const digital = body['digital'];
     const requests = isRecord(digital) ? digital['requests'] : undefined;
     if (!Array.isArray(requests) || requests.length === 0 || requests.length > MAX_DC_API_REQUESTS) {
@@ -135,7 +138,12 @@ export class VerifierClient {
     return out;
   }
 
-  private async call(method: 'GET' | 'POST', path: string, body?: Record<string, unknown>): Promise<Record<string, unknown>> {
+  private async call(
+    method: 'GET' | 'POST',
+    path: string,
+    body?: Record<string, unknown>,
+    timeoutMs?: number,
+  ): Promise<Record<string, unknown>> {
     const headers: Record<string, string> = { Accept: 'application/json' };
     if (body !== undefined) {
       headers['Content-Type'] = 'application/json';
@@ -147,7 +155,7 @@ export class VerifierClient {
         method,
         headers,
         body: body === undefined ? null : JSON.stringify(body),
-        signal: AbortSignal.timeout(this.timeoutMs),
+        signal: AbortSignal.timeout(Math.max(1, Math.min(this.timeoutMs, timeoutMs ?? this.timeoutMs))),
       });
       const length = Number(response.headers.get('content-length') ?? '0');
       if (length > MAX_SESSION_BYTES) {

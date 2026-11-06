@@ -7,7 +7,7 @@ import { randomUUID } from 'node:crypto';
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from 'node:http';
 import type { AddressInfo } from 'node:net';
 
-import { Bridge } from '../src/bridge.js';
+import { Bridge, type BridgeOptions } from '../src/bridge.js';
 import { loadConfig, type Config } from '../src/config.js';
 import { FireFlyClient } from '../src/firefly.js';
 import { createLogger } from '../src/log.js';
@@ -159,6 +159,10 @@ export interface MockVerifier {
   failNextDcApiCreate: number | null;
   /** When set, the next request read answers this status. */
   failNextRequest: number | null;
+  /** When set, the next `dc_api_openid4vp` create answers only after this many milliseconds. */
+  stallNextDcApiCreateMs: number | null;
+  /** When set, the next request read answers only after this many milliseconds. */
+  stallNextRequestMs: number | null;
   /** How many of the next session reads answer 503. */
   failNextInfo: number;
   setSession(id: string, session: Record<string, unknown>): void;
@@ -172,7 +176,14 @@ export async function startMockVerifier(): Promise<MockVerifier> {
   const createCalls: Array<Record<string, unknown>> = [];
   const infoCalls: string[] = [];
   const requestCalls: string[] = [];
-  const state = { failNextCreate: null as number | null, failNextDcApiCreate: null as number | null, failNextRequest: null as number | null, failNextInfo: 0 };
+  const state = {
+    failNextCreate: null as number | null,
+    failNextDcApiCreate: null as number | null,
+    failNextRequest: null as number | null,
+    stallNextDcApiCreateMs: null as number | null,
+    stallNextRequestMs: null as number | null,
+    failNextInfo: 0,
+  };
 
   const server = createServer(async (req, res) => {
     const path = req.url ?? '';
@@ -188,6 +199,11 @@ export async function startMockVerifier(): Promise<MockVerifier> {
       const core = setup['core_flow'] as Record<string, unknown>;
       const id = typeof core['sessionId'] === 'string' ? core['sessionId'] : randomUUID();
       if (setup['flow_type'] === 'dc_api_openid4vp') {
+        if (state.stallNextDcApiCreateMs !== null) {
+          const ms = state.stallNextDcApiCreateMs;
+          state.stallNextDcApiCreateMs = null;
+          await sleep(ms); // The session is still created: a slow verifier, not a broken one.
+        }
         if (state.failNextDcApiCreate !== null) {
           const status = state.failNextDcApiCreate;
           state.failNextDcApiCreate = null;
@@ -243,6 +259,11 @@ export async function startMockVerifier(): Promise<MockVerifier> {
     if (req.method === 'GET' && request) {
       const id = decodeURIComponent(request[1]!);
       requestCalls.push(id);
+      if (state.stallNextRequestMs !== null) {
+        const ms = state.stallNextRequestMs;
+        state.stallNextRequestMs = null;
+        await sleep(ms);
+      }
       if (state.failNextRequest !== null) {
         const status = state.failNextRequest;
         state.failNextRequest = null;
@@ -310,6 +331,18 @@ export async function startMockVerifier(): Promise<MockVerifier> {
     },
     set failNextRequest(value: number | null) {
       state.failNextRequest = value;
+    },
+    get stallNextDcApiCreateMs() {
+      return state.stallNextDcApiCreateMs;
+    },
+    set stallNextDcApiCreateMs(value: number | null) {
+      state.stallNextDcApiCreateMs = value;
+    },
+    get stallNextRequestMs() {
+      return state.stallNextRequestMs;
+    },
+    set stallNextRequestMs(value: number | null) {
+      state.stallNextRequestMs = value;
     },
     get failNextInfo() {
       return state.failNextInfo;
@@ -463,7 +496,10 @@ export interface TestBridge {
   close(): Promise<void>;
 }
 
-export async function startBridge(envOverrides: Record<string, string | undefined> = {}): Promise<TestBridge> {
+export async function startBridge(
+  envOverrides: Record<string, string | undefined> = {},
+  bridgeOverrides: Partial<Pick<BridgeOptions, 'dcApiDeadlineMs'>> = {},
+): Promise<TestBridge> {
   const verifier = await startMockVerifier();
   const firefly = await startMockFireFly();
   const clock = { now: Date.parse('2026-11-03T12:00:00Z') };
@@ -480,6 +516,7 @@ export async function startBridge(envOverrides: Record<string, string | undefine
     now: () => clock.now,
     attestRetryDelaysMs: [5, 5],
     sessionReadRetryDelaysMs: [5, 5],
+    ...bridgeOverrides,
   });
   const server = createBridgeServer(bridge, config, log);
   await listen(server);

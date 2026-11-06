@@ -68,8 +68,8 @@ Response `201`:
     and no Authorization header, the origin binding in the presentation is the authentication.
 - *Reference bridge:* `id` is a UUID the bridge chose as the walt.id session id; `wallet_url` is walt.id's
   `bootstrapAuthorizationRequestUrl` (the `request_uri` form); `dc_api` is set when `BRIDGE_DC_API_ORIGINS` is
-  configured, and `null` otherwise or when its second session could not be opened (logged, the QR code stands
-  alone).
+  configured, and `null` otherwise or when its second session could not be opened and read within two seconds of
+  the request (logged, the QR code stands alone; WordPress waits five seconds for the whole answer).
 
 ## The Digital Credentials API path
 

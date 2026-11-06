@@ -620,6 +620,91 @@ describe('Digital Credentials API', () => {
     assert.equal(await t.verifier.fireCallback(id), 404);
     t.clock.now = start;
   });
+
+  it('keeps retrying the session it could not read, whatever the other session says meanwhile', async () => {
+    const { id, dcApi } = await open();
+    const dcId = dcSessionIdOf(dcApi!);
+    t.verifier.setSession(id, successfulSession(id));
+    t.verifier.failNextInfo = 10;
+    assert.equal(await t.verifier.fireCallback(id), 202);
+    await t.bridge.idle();
+    assert.equal(t.firefly.invokes.length, 0, 'the wallet answered, but the session could not be read');
+    t.verifier.failNextInfo = 0;
+
+    // The browser-bound session rings too, reads fine, and has nothing to say (UNUSED).
+    assert.equal(await t.verifier.fireCallback(dcId), 202);
+    await t.bridge.idle();
+    assert.equal(t.firefly.invokes.length, 0);
+
+    const reads = t.verifier.infoCalls.length;
+    t.bridge.sweep();
+    await t.bridge.idle();
+    assert.deepEqual(t.verifier.infoCalls.slice(reads), [id], 'the sweep re-reads the session that failed, and only that one');
+    assert.equal(t.firefly.invokes.length, 1, 'the login is attested after all');
+    assert.equal((await t.call('GET', `/v1/presentation-requests/${id}/result`)).status, 200);
+  });
+
+  describe("within WordPress's wait", () => {
+    // WordPress gives the whole call five seconds; the extra session gets this much of it here.
+    const DEADLINE_MS = 100;
+    let slow: TestBridge;
+    before(async () => {
+      slow = await startBridge({ BRIDGE_DC_API_ORIGINS: ORIGINS, VERIFIER_PUBLIC_URL: 'https://verifier.example.com' }, { dcApiDeadlineMs: DEADLINE_MS });
+    });
+    after(async () => {
+      await slow.close();
+    });
+
+    async function openSlow(): Promise<{ status: number; body: Record<string, unknown>; took: number }> {
+      const body = requestBody({ correlation_id: freshCorrelation() }, slow.clock.now);
+      const started = Date.now();
+      const response = await slow.call('POST', '/v1/presentation-requests', body);
+      return { status: response.status, body: response.body as Record<string, unknown>, took: Date.now() - started };
+    }
+
+    it('gives up a stalled second session and returns the QR code in time', async () => {
+      slow.verifier.stallNextDcApiCreateMs = 600;
+      const { status, body, took } = await openSlow();
+      assert.equal(status, 201, JSON.stringify(body));
+      assert.equal(body['dc_api'], null);
+      assert.match(body['wallet_url'] as string, /^openid4vp:/);
+      assert.ok(took < 500, `answered in ${took} ms, without waiting out the stall`);
+      assert.ok(slow.logs.some((line) => line.includes('could not open a Digital Credentials API session')));
+
+      const id = body['id'] as string;
+      slow.verifier.setSession(id, successfulSession(id));
+      assert.equal(await slow.verifier.fireCallback(id), 202);
+      await slow.bridge.idle();
+      assert.equal((await slow.call('GET', `/v1/presentation-requests/${id}/result`)).status, 200, 'the QR code still logs in');
+    });
+
+    it('gives up a stalled request read, forgets that session, and returns the QR code in time', async () => {
+      slow.verifier.stallNextRequestMs = 600;
+      const { status, body, took } = await openSlow();
+      assert.equal(status, 201, JSON.stringify(body));
+      assert.equal(body['dc_api'], null);
+      assert.ok(took < 500, `answered in ${took} ms, without waiting out the stall`);
+      assert.ok(slow.logs.some((line) => line.includes('could not read the Digital Credentials API request')));
+      const dcSetup = slow.verifier.createCalls.at(-1)!;
+      assert.equal(dcSetup['flow_type'], 'dc_api_openid4vp');
+      const dcId = (dcSetup['core_flow'] as Record<string, unknown>)['sessionId'] as string;
+      assert.equal(await slow.verifier.fireCallback(dcId), 404, 'the orphaned session is forgotten');
+    });
+
+    it('does not open the second session at all once the time is up', async () => {
+      const none = await startBridge({ BRIDGE_DC_API_ORIGINS: ORIGINS, VERIFIER_PUBLIC_URL: 'https://verifier.example.com' }, { dcApiDeadlineMs: 0 });
+      try {
+        const body = requestBody({ correlation_id: freshCorrelation() }, none.clock.now);
+        const response = await none.call('POST', '/v1/presentation-requests', body);
+        assert.equal(response.status, 201, JSON.stringify(response.body));
+        assert.equal((response.body as Record<string, unknown>)['dc_api'], null);
+        assert.equal(none.verifier.createCalls.length, 1, 'only the cross-device session was opened');
+        assert.ok(none.logs.some((line) => line.includes('no time left to open a Digital Credentials API session')));
+      } finally {
+        await none.close();
+      }
+    });
+  });
 });
 
 describe('trusted-issuer registry', () => {
