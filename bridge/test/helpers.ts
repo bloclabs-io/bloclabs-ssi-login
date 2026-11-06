@@ -285,7 +285,18 @@ export interface MockFireFly {
   /** Consumed one per invoke; when empty the invoke succeeds with a confirmed operation. */
   responses: ScriptedResponse[];
   transactionStatus: Map<string, string>;
+  /** Every `query/isTrusted` call on a trusted-issuer registry API. */
+  queries: FireFlyCall[];
+  /** Consumed one per registry query; when empty the registry answers from `trusted`. */
+  queryResponses: ScriptedResponse[];
+  /** Issuer and vct pairs the registry trusts, as `registryKey()` makes them. */
+  trusted: Set<string>;
   close(): Promise<void>;
+}
+
+/** The TrustedIssuerRegistry key of a pair, for `MockFireFly.trusted`. */
+export function registryKey(issuer: unknown, vct: unknown): string {
+  return `${String(issuer)}\n${String(vct)}`;
 }
 
 export function okOperation(): ScriptedAnswer {
@@ -301,9 +312,25 @@ export async function startMockFireFly(): Promise<MockFireFly> {
   const statusCalls: string[] = [];
   const responses: ScriptedResponse[] = [];
   const transactionStatus = new Map<string, string>();
+  const queries: FireFlyCall[] = [];
+  const queryResponses: ScriptedResponse[] = [];
+  const trusted = new Set<string>();
 
   const server = createServer(async (req, res) => {
     const path = req.url ?? '';
+    if (req.method === 'POST' && /\/query\/isTrusted$/.test(path)) {
+      const call: FireFlyCall = { path, headers: req.headers, body: JSON.parse(await readBody(req)) as Record<string, unknown> };
+      queries.push(call);
+      const scripted = queryResponses.shift();
+      if (scripted) {
+        const answer = await scripted(call);
+        json(res, answer.status, answer.body);
+        return;
+      }
+      const input = (call.body['input'] ?? {}) as Record<string, unknown>;
+      json(res, 200, { output: trusted.has(registryKey(input['issuer'], input['vct'])) });
+      return;
+    }
     if (req.method === 'POST' && /\/invoke\//.test(path)) {
       const call: FireFlyCall = { path, headers: req.headers, body: JSON.parse(await readBody(req)) as Record<string, unknown> };
       invokes.push(call);
@@ -336,6 +363,9 @@ export async function startMockFireFly(): Promise<MockFireFly> {
     statusCalls,
     responses,
     transactionStatus,
+    queries,
+    queryResponses,
+    trusted,
     close: () => closeServer(server),
   };
 }

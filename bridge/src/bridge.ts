@@ -6,7 +6,11 @@
  *  2. The verifier rings the bridge's callback for every session update. The
  *     bridge re-reads the session and, once it is SUCCESSFUL or FAILED, computes
  *     the commitments and calls `attest` through FireFly.
- *  3. Only after FireFly accepted the attestation does the result become readable,
+ *  3. With a trusted-issuer registry configured (`FIREFLY_REGISTRY_API`), a
+ *     SUCCESSFUL session is first checked on chain: `isTrusted(issuer, vct)` for
+ *     the presented credential. An untrusted pair is attested as a rejection; a
+ *     registry that cannot answer fails the attempt closed, with no attestation.
+ *  4. Only after FireFly accepted the attestation does the result become readable,
  *     and it stays readable for the attempt lifetime plus a minute.
  */
 
@@ -42,7 +46,7 @@ export interface BridgeOptions {
   firefly: FireFlyClient;
   log: Logger;
   now?: () => number;
-  /** Waits between attestation attempts; one more attempt than there are delays. */
+  /** Waits between FireFly attempts (the attestation, and the registry query); one more attempt than there are delays. */
   attestRetryDelaysMs?: number[];
   /** Waits between attempts to read a verifier session after a transient failure. */
   sessionReadRetryDelaysMs?: number[];
@@ -291,7 +295,20 @@ export class Bridge {
     await this.settle(request, evaluation);
   }
 
-  private async settle(request: BridgeRequest, evaluation: Extract<Evaluation, { kind: 'verified' | 'rejected' }>): Promise<void> {
+  private async settle(request: BridgeRequest, verdict: Extract<Evaluation, { kind: 'verified' | 'rejected' }>): Promise<void> {
+    let evaluation = verdict;
+    if (evaluation.kind === 'verified' && this.config.firefly.registryApiName !== undefined) {
+      const trusted = await this.registryTrusts(request.id, evaluation.issuer, evaluation.vct);
+      if (trusted === null) {
+        // Fail closed: no decision was reached, so nothing is attested and the attempt fails.
+        request.state = 'failed';
+        return;
+      }
+      if (!trusted) {
+        evaluation = { kind: 'rejected', presentationHash: evaluation.presentationHash, failureType: 'untrusted_issuer' };
+      }
+    }
+
     const attestation: AttestInput = evaluation.kind === 'verified'
       ? {
           correlationId: request.correlationId,
@@ -308,7 +325,7 @@ export class Bridge {
 
     let outcome: AttestOutcome;
     try {
-      outcome = await this.attestWithRetry(request.id, attestation);
+      outcome = await this.fireflyWithRetry(request.id, 'attestation', () => this.firefly.attest(attestation));
     } catch (error) {
       request.state = 'failed';
       this.log.error('attestation failed', { id: request.id, result: attestation.result, error: (error as Error).message });
@@ -358,20 +375,41 @@ export class Bridge {
     }
   }
 
-  private async attestWithRetry(id: string, input: AttestInput): Promise<AttestOutcome> {
+  /**
+   * The on-chain trust decision for the presented credential: true or false as the
+   * registry answers, or null when no answer could be had (FireFly down, the API
+   * missing, an unusable output), which the caller fails closed on. A credential
+   * that names no issuer or no type cannot be in the registry, so it is untrusted
+   * without a query. Neither value is logged: the issuer and the vct name the
+   * credential, and the log holds identifiers and outcomes only.
+   */
+  private async registryTrusts(id: string, issuer: string | null, vct: string | null): Promise<boolean | null> {
+    if (issuer === null || vct === null) {
+      this.log.warn('presented credential names no issuer or no vct, so the registry cannot trust it', { id });
+      return false;
+    }
+    let trusted: boolean;
+    try {
+      trusted = await this.fireflyWithRetry(id, 'registry query', () => this.firefly.isTrusted(issuer, vct));
+    } catch (error) {
+      this.log.error('the trusted-issuer registry could not be asked, the attempt fails closed', { id, error: (error as Error).message });
+      return null;
+    }
+    this.log.debug('trusted-issuer registry answered', { id, trusted });
+    return trusted;
+  }
+
+  /** Repeats a FireFly call while it fails for a transient reason; the attestation is safe to repeat by its idempotency key, the query because it writes nothing. */
+  private async fireflyWithRetry<T>(id: string, what: 'attestation' | 'registry query', call: () => Promise<T>): Promise<T> {
     for (let attempt = 0; ; attempt++) {
       try {
-        return await this.firefly.attest(input);
+        return await call();
       } catch (error) {
         const delay = this.attestRetryDelaysMs[attempt];
         if (!(error instanceof FireFlyError) || !error.retryable || delay === undefined) {
           throw error;
         }
-        this.log.warn('attestation attempt failed, retrying with the same idempotency key', {
-          id,
-          attempt: attempt + 1,
-          error: error.message,
-        });
+        this.log.warn(`${what} attempt failed, retrying`, { id, attempt: attempt + 1, error: error.message });
         await this.sleep(delay);
       }
     }
