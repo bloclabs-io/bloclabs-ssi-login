@@ -2,6 +2,8 @@
 
 ## 0.1.0-dev (unreleased)
 
+- AGENTS.md: a "blocLabs look and feel" section with the brand tokens measured on bloclabs.io (colours, fonts, shapes,
+  contrast rules) for anything blocLabs-branded; the plugin's own UI keeps following the site theme.
 - The "Log in with a digital credential" button and the wallet link on wp-login.php keep their own text, background and
   border colours, pinned as one set, so a theme or login customiser that recolours links or buttons cannot leave the
   text unreadable; a theme recolours them through the `--bloclabs-ssi-button-*` custom properties. The focus ring
