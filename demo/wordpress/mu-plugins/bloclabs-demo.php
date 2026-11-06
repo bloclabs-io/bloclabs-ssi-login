@@ -83,6 +83,22 @@ function bloclabs_ssi_demo_template( string $template ): string {
 add_filter( 'template_include', 'bloclabs_ssi_demo_template' );
 
 /**
+ * Wallet page on this machine. The host port comes from the container
+ * environment, which Compose sets from demo/.env. Anything else falls
+ * back to the default, so a bad value cannot point the link elsewhere.
+ */
+function bloclabs_ssi_demo_wallet_url(): string {
+	$configured = getenv( 'WALLET_WEB_PUBLIC_URL' );
+	if ( is_string( $configured ) && 1 === preg_match( '#\Ahttp://127\.0\.0\.1:([0-9]{1,5})\z#', $configured, $match ) ) {
+		$port = (int) $match[1];
+		if ( $port >= 1 && $port <= 65535 ) {
+			return $configured;
+		}
+	}
+	return 'http://127.0.0.1:7106';
+}
+
+/**
  * Greeting on the demo home page.
  */
 function bloclabs_ssi_demo_greeting(): void {

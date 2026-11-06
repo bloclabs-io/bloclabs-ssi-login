@@ -6,11 +6,13 @@ What `./setup.sh` starts, and why it is shaped this way. The walkthrough is [Try
 
 ## What is published
 
-| Address | Service |
-|---|---|
-| http://127.0.0.1:8080 | WordPress |
-| http://127.0.0.1:7106 | Web wallet |
-| http://127.0.0.1:7006 | Wallet API (the page in the browser calls this) |
+Three ports, all on `127.0.0.1`. The defaults live in [`.env`](.env). Change a number there when another stack already uses it, then run `./setup.sh` again. Compose reads that file, and `./setup.sh` prints the addresses it actually bound. The wallet page's `WALLET_API2_PUBLIC_URL` is `http://127.0.0.1:` plus `WALLET_API_PORT`, and the wallet API's `publicBaseUrl` is the same address, rewritten on every start. The containers still listen on their own ports (WordPress 80, wallet API 7006, wallet web 8080).
+
+| Variable | Default | Service |
+|---|---|---|
+| `WORDPRESS_PORT` | 8080 | WordPress |
+| `WALLET_WEB_PORT` | 7106 | Web wallet |
+| `WALLET_API_PORT` | 7006 | Wallet API (the page in the browser calls this) |
 
 Everything else is on the Compose network `bloclabs-ssi-demo` and has no host port. FireFly's API has no authentication, so publishing it would expose contract deployment and the signing key's use to any local process. The issuer and the verifier are reached by name (`issuer.demo`, `verifier.demo`) through the `edge` proxy, which is also unpublished. The wallet backend resolves those names; the browser does not. That is what makes the request URL inside a presentation carry a host the wallet can open, without putting the verifier on the host.
 

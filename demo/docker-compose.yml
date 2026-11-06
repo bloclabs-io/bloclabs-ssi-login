@@ -1,9 +1,7 @@
-# Local demo. Published ports are bound to 127.0.0.1 only:
-#   WordPress  http://127.0.0.1:8080
-#   Wallet     http://127.0.0.1:7106
-#   Wallet API http://127.0.0.1:7006
-# FireFly, Besu, the verifier, the issuer and the bridge stay on the
-# Compose network. See README.md in this directory.
+# Local demo. Published ports are bound to 127.0.0.1 only.
+# Host ports come from .env (defaults: WordPress 8080, wallet 7106,
+# wallet API 7006). FireFly, Besu, the verifier, the issuer and the
+# bridge stay on the Compose network. See README.md in this directory.
 
 name: bloclabs-ssi-demo
 
@@ -16,6 +14,7 @@ services:
       DEMO_RUNTIME: /runtime
       DEMO_SIGNER: /signer
       DEMO_REGISTRY_OWNER: /registry-owner
+      DEMO_WALLET_API_PUBLIC_URL: http://127.0.0.1:${WALLET_API_PORT:-7006}
     volumes:
       - ./bin:/opt/demo:ro
       - ./runtime:/runtime
@@ -208,10 +207,11 @@ services:
     entrypoint: ["/bin/sh", "/entrypoint.sh"]
     command: ["apache2-foreground"]
     ports:
-      - "127.0.0.1:8080:80"
+      - "127.0.0.1:${WORDPRESS_PORT:-8080}:80"
     environment:
-      WP_HOME: http://127.0.0.1:8080
-      WP_SITEURL: http://127.0.0.1:8080
+      WP_HOME: http://127.0.0.1:${WORDPRESS_PORT:-8080}
+      WP_SITEURL: http://127.0.0.1:${WORDPRESS_PORT:-8080}
+      WALLET_WEB_PUBLIC_URL: http://127.0.0.1:${WALLET_WEB_PORT:-7106}
     volumes:
       - wordpress_html:/var/www/html
       - ..:/var/www/html/wp-content/plugins/bloclabs-ssi-login:ro
@@ -230,6 +230,7 @@ services:
     user: "33:33"
     environment:
       HOME: /tmp
+      WORDPRESS_PUBLIC_URL: http://127.0.0.1:${WORDPRESS_PORT:-8080}
     depends_on:
       wordpress:
         condition: service_started
@@ -291,7 +292,7 @@ services:
       postgres:
         condition: service_healthy
     ports:
-      - "127.0.0.1:7006:7006"
+      - "127.0.0.1:${WALLET_API_PORT:-7006}:7006"
     volumes:
       - ./walt/wallet:/waltid-wallet-api2/config:ro
       - ./runtime:/runtime:ro
@@ -304,9 +305,9 @@ services:
       wallet:
         condition: service_started
     ports:
-      - "127.0.0.1:7106:8080"
+      - "127.0.0.1:${WALLET_WEB_PORT:-7106}:8080"
     environment:
-      WALLET_API2_PUBLIC_URL: http://127.0.0.1:7006
+      WALLET_API2_PUBLIC_URL: http://127.0.0.1:${WALLET_API_PORT:-7006}
       WALLET_BRAND_APP_TITLE: blocLabs Wallet
       WALLET_BRAND_PRIMARY: "#ff782d"
       WALLET_BRAND_ON_PRIMARY: "#333333"

@@ -33,7 +33,7 @@ defined( 'ABSPATH' ) || exit;
 	<section class="bloclabs-demo-card">
 		<h2><?php esc_html_e( 'Wallet', 'bloclabs-ssi-login' ); ?></h2>
 		<p><?php esc_html_e( 'Receive the demo credential here, then present it on the login page.', 'bloclabs-ssi-login' ); ?></p>
-		<p><a class="bloclabs-demo-link" href="<?php echo esc_url( 'http://127.0.0.1:7106' ); ?>"><?php esc_html_e( 'Open the wallet', 'bloclabs-ssi-login' ); ?></a></p>
+		<p><a class="bloclabs-demo-link" href="<?php echo esc_url( bloclabs_ssi_demo_wallet_url() ); ?>"><?php esc_html_e( 'Open the wallet', 'bloclabs-ssi-login' ); ?></a></p>
 	</section>
 </main>
 <?php wp_footer(); ?>

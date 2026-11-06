@@ -14,6 +14,7 @@
 import { chmodSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { randomBytes } from 'node:crypto';
 import { dirname, join } from 'node:path';
+import { pathToFileURL } from 'node:url';
 
 import {
 	didJwkP256,
@@ -45,6 +46,25 @@ function writeAt(root, name, contents) {
 
 function write(name, contents) {
 	writeAt(runtime, name, contents);
+}
+
+/**
+ * The browser reaches the wallet API on the host port from demo/.env.
+ * The container still listens on 7006. Rewritten on every start so a port
+ * change applies without rotating keys.
+ */
+export function walletApiPublicUrl() {
+	const raw = (process.env.DEMO_WALLET_API_PUBLIC_URL || 'http://127.0.0.1:7006').trim();
+	const match = /^http:\/\/127\.0\.0\.1:([0-9]{1,5})$/.exec(raw);
+	const port = match ? Number(match[1]) : 0;
+	if (!match || port < 1 || port > 65535) {
+		throw new Error('DEMO_WALLET_API_PUBLIC_URL must be http://127.0.0.1:<port>');
+	}
+	return raw;
+}
+
+function writeWalletService() {
+	write('wallet-service.conf', `publicBaseUrl = "${walletApiPublicUrl()}"\n`);
 }
 
 function secret() {
@@ -229,6 +249,7 @@ function bridgeQueries(did) {
 function init() {
 	mkdirSync(runtime, { recursive: true, mode: 0o755 });
 	chmodSync(runtime, 0o755);
+	writeWalletService();
 	const ready = join(runtime, 'ready');
 	try {
 		readFileSync(ready);
@@ -355,9 +376,11 @@ WORDPRESS_DB_NAME=wordpress
 	process.stdout.write(`demo keys generated for ${signer}, registry owner ${owner}\n`);
 }
 
-if (process.argv.includes('--self-test')) {
-	selfTest();
-	process.stdout.write('ok\n');
-} else {
-	init();
+if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
+	if (process.argv.includes('--self-test')) {
+		selfTest();
+		process.stdout.write('ok\n');
+	} else {
+		init();
+	}
 }

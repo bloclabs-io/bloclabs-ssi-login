@@ -14,6 +14,38 @@ if ! command -v docker >/dev/null 2>&1 || ! docker compose version >/dev/null 2>
 	exit 1
 fi
 
+# Published host ports. demo/.env overrides the defaults. The bind address
+# stays 127.0.0.1 in docker-compose.yml; only the port number is configurable.
+load_ports() {
+	local cleaned name value
+	if [[ -f .env ]]; then
+		cleaned="$(mktemp)"
+		tr -d '\r' < .env > "${cleaned}"
+		set -a
+		# shellcheck disable=SC1090
+		. "${cleaned}"
+		set +a
+		rm -f "${cleaned}"
+	fi
+	WORDPRESS_PORT="${WORDPRESS_PORT:-8080}"
+	WALLET_WEB_PORT="${WALLET_WEB_PORT:-7106}"
+	WALLET_API_PORT="${WALLET_API_PORT:-7006}"
+	for name in WORDPRESS_PORT WALLET_WEB_PORT WALLET_API_PORT; do
+		value="${!name}"
+		if [[ ! "${value}" =~ ^[0-9]+$ ]] || (( 10#${value} < 1 || 10#${value} > 65535 )); then
+			echo "${name} must be a TCP port from 1 to 65535." >&2
+			exit 1
+		fi
+	done
+	if [[ "${WORDPRESS_PORT}" == "${WALLET_WEB_PORT}" || "${WORDPRESS_PORT}" == "${WALLET_API_PORT}" || "${WALLET_WEB_PORT}" == "${WALLET_API_PORT}" ]]; then
+		echo "WORDPRESS_PORT, WALLET_WEB_PORT and WALLET_API_PORT must be different." >&2
+		exit 1
+	fi
+	export WORDPRESS_PORT WALLET_WEB_PORT WALLET_API_PORT
+}
+
+load_ports
+
 # A killed setup used to leave the owner keystore in signer/. Delete that
 # leftover before any container starts. The registry owner is never loaded
 # into FireFly's signer; deploy signs with a signer the bridge cannot reach.
@@ -160,9 +192,10 @@ cat <<EOF
 
 The demo is up.
 
-Wallet:     http://127.0.0.1:7106
-WordPress:  http://127.0.0.1:8080
-Login:      http://127.0.0.1:8080/wp-login.php
+Wallet:     http://127.0.0.1:${WALLET_WEB_PORT}
+Wallet API: http://127.0.0.1:${WALLET_API_PORT}
+WordPress:  http://127.0.0.1:${WORDPRESS_PORT}
+Login:      http://127.0.0.1:${WORDPRESS_PORT}/wp-login.php
 Admin user: demo
 Admin password: ${admin}
 

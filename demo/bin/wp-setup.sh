@@ -33,9 +33,16 @@ if [[ -z "${listener}" || -z "${address}" ]]; then
 	exit 1
 fi
 
+public_url="${WORDPRESS_PUBLIC_URL:-http://127.0.0.1:8080}"
+public_url="${public_url//$'\r'/}"
+if [[ ! "${public_url}" =~ ^http://127\.0\.0\.1:[0-9]{1,5}$ ]]; then
+	echo "WORDPRESS_PUBLIC_URL must be http://127.0.0.1:<port>." >&2
+	exit 1
+fi
+
 if ! wp core is-installed >/dev/null 2>&1; then
 	wp core install \
-		--url="http://127.0.0.1:8080" \
+		--url="${public_url}" \
 		--title="blocLabs" \
 		--admin_user="demo" \
 		--admin_password="${admin_pw}" \
@@ -43,8 +50,8 @@ if ! wp core is-installed >/dev/null 2>&1; then
 		--skip-email
 fi
 
-wp option update home "http://127.0.0.1:8080"
-wp option update siteurl "http://127.0.0.1:8080"
+wp option update home "${public_url}"
+wp option update siteurl "${public_url}"
 wp option update blogname "blocLabs"
 wp option update blogdescription "Sign in with a credential"
 wp option update blog_public 0
