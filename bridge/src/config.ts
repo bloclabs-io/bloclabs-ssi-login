@@ -57,12 +57,26 @@ export interface FireFlyConfig {
   registryApiName?: string;
 }
 
+/**
+ * The Digital Credentials API path (docs/BRIDGE-API.md, `dc_api`): a second,
+ * browser-mediated verifier session per login attempt. Off unless configured.
+ */
+export interface DcApiConfig {
+  /**
+   * Origins of the login pages (`https://site.example`, with the port if any): what the
+   * browser reports to the wallet and what the verifier expects in the holder binding.
+   */
+  origins: string[];
+  /** walt.id verifier-api2 base URL as browsers reach it; the response route is built from it. */
+  verifierPublicUrl: string;
+}
+
 export interface Config {
   listenHost: string;
   listenPort: number;
   /** WordPress must send `Authorization: Bearer <authToken>`. */
   authToken: string;
-  /** Where the verifier posts session updates; the request id is appended as a path segment. */
+  /** Where the verifier posts session updates; the session id is appended as a path segment. */
   callbackUrl: string;
   /** walt.id verifier-api2 base URL, as the bridge reaches it. */
   verifierUrl: string;
@@ -70,6 +84,8 @@ export interface Config {
   verifierSignedRequest: boolean;
   firefly: FireFlyConfig;
   queries: Record<string, QueryDefinition>;
+  /** `null` when BRIDGE_DC_API_ORIGINS is unset: every `dc_api` is then `null`. */
+  dcApi: DcApiConfig | null;
   logLevel: LogLevel;
 }
 
@@ -124,8 +140,56 @@ export function loadConfig(env: NodeJS.ProcessEnv): Config {
     verifierSignedRequest: signedRequest === 'true',
     firefly,
     queries: parseQueries(required(env, 'BRIDGE_QUERIES')),
+    dcApi: parseDcApi(env),
     logLevel,
   };
+}
+
+/**
+ * BRIDGE_DC_API_ORIGINS lists the login pages' origins, separated by commas or
+ * whitespace; VERIFIER_PUBLIC_URL is then required, because the browser posts
+ * the wallet's answer straight to the verifier. An origin is scheme, host and
+ * port only (the browser's `location.origin`), and it must be a secure context,
+ * as the Digital Credentials API itself requires: https, or http on localhost.
+ */
+function parseDcApi(env: NodeJS.ProcessEnv): DcApiConfig | null {
+  const raw = env['BRIDGE_DC_API_ORIGINS']?.trim();
+  if (!raw) {
+    return null;
+  }
+  const origins: string[] = [];
+  for (const value of raw.split(/[\s,]+/).filter((item) => item !== '')) {
+    const origin = parseOrigin(value);
+    if (!origins.includes(origin)) {
+      origins.push(origin);
+    }
+  }
+  if (origins.length === 0) {
+    return null;
+  }
+  return {
+    origins,
+    verifierPublicUrl: httpUrl(required(env, 'VERIFIER_PUBLIC_URL'), 'VERIFIER_PUBLIC_URL').replace(/\/+$/, ''),
+  };
+}
+
+function parseOrigin(value: string): string {
+  const where = `BRIDGE_DC_API_ORIGINS: "${value}"`;
+  let url: URL;
+  try {
+    url = new URL(value);
+  } catch {
+    throw new ConfigError(`${where} is not an absolute URL`);
+  }
+  const loopback = url.hostname === 'localhost' || url.hostname.endsWith('.localhost') || url.hostname === '127.0.0.1' || url.hostname === '[::1]';
+  if (url.protocol !== 'https:' && !(url.protocol === 'http:' && loopback)) {
+    throw new ConfigError(`${where} must be an https origin (http only on localhost): the Digital Credentials API needs a secure context`);
+  }
+  if (url.username !== '' || url.password !== '' || url.search !== '' || url.hash !== '' || url.pathname !== '/') {
+    throw new ConfigError(`${where} must be an origin, scheme://host[:port], without a path`);
+  }
+  // Normalised (lower-case host, no trailing slash): what the browser reports.
+  return url.origin;
 }
 
 function required(env: NodeJS.ProcessEnv, name: string): string {

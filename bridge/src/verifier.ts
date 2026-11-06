@@ -4,6 +4,8 @@
  * Endpoints (waltid-services/waltid-verifier-api2, checked against v1.2.0 and main):
  *   POST /verification-session/create          VerificationSessionSetup -> {sessionId, bootstrapAuthorizationRequestUrl, ...}
  *   GET  /verification-session/{id}/info       Verification2Session (public view)
+ *   GET  /verification-session/{id}/request    for a `dc_api_openid4vp` session: {digital: {requests: [{protocol, data}]}},
+ *                                              the options of navigator.credentials.get()
  * Session updates are posted to `core_flow.notifications.webhook.url` as
  * {target, event, session}; the bridge treats them as a doorbell and re-reads
  * the session, it never trusts the posted body.
@@ -38,6 +40,21 @@ export interface SessionSetupOptions {
  * state itself; WordPress's nonce is not used, docs/BRIDGE-API.md allows that.
  */
 export function buildSessionSetup(options: SessionSetupOptions): Record<string, unknown> {
+  return { flow_type: 'cross_device', core_flow: coreFlow(options) };
+}
+
+/**
+ * The Digital Credentials API flow (OpenID4VP 1.0 appendix A, walt.id's
+ * `dc_api_openid4vp`): the same query, expiry, retention and webhook, bound to the
+ * origins of the login pages instead of a response URI. walt.id takes the request
+ * unsigned and the response in clear (`response_mode: dc_api`) unless its own
+ * configuration says otherwise, and checks the holder binding against the origin.
+ */
+export function buildDcApiSessionSetup(options: SessionSetupOptions & { origins: string[] }): Record<string, unknown> {
+  return { flow_type: 'dc_api_openid4vp', core_flow: coreFlow(options), expectedOrigins: options.origins };
+}
+
+function coreFlow(options: SessionSetupOptions): Record<string, unknown> {
   const core: Record<string, unknown> = {
     sessionId: options.id,
     dcql_query: options.query.dcql_query,
@@ -51,13 +68,21 @@ export function buildSessionSetup(options: SessionSetupOptions): Record<string, 
   if (options.query.policies) {
     core['policies'] = options.query.policies;
   }
-  return { flow_type: 'cross_device', core_flow: core };
+  return core;
 }
 
 export interface CreatedSession {
   sessionId: string;
   walletUrl: string;
 }
+
+/** One entry of `navigator.credentials.get({digital: {requests}})`. */
+export interface DcApiRequest {
+  protocol: string;
+  data: Record<string, unknown>;
+}
+
+const MAX_DC_API_REQUESTS = 8;
 
 const MAX_SESSION_BYTES = 16 * 1024 * 1024;
 
@@ -78,11 +103,51 @@ export class VerifierClient {
     return { sessionId, walletUrl };
   }
 
+  /**
+   * Opens a `dc_api_openid4vp` session; it has no wallet URL, the browser carries
+   * the request. `timeoutMs` caps this call below the client's usual timeout.
+   */
+  async createDcApiSession(setup: Record<string, unknown>, timeoutMs?: number): Promise<string> {
+    const body = await this.call('POST', '/verification-session/create', setup, timeoutMs);
+    const sessionId = body['sessionId'];
+    if (typeof sessionId !== 'string' || sessionId === '') {
+      throw new VerifierError('The verifier answered without a session id', false);
+    }
+    return sessionId;
+  }
+
   async getSession(id: string): Promise<Record<string, unknown>> {
     return this.call('GET', `/verification-session/${encodeURIComponent(id)}/info`);
   }
 
-  private async call(method: 'GET' | 'POST', path: string, body?: Record<string, unknown>): Promise<Record<string, unknown>> {
+  /**
+   * The Digital Credentials API request of a `dc_api_openid4vp` session, as walt.id
+   * wraps it for the browser. Reading it marks the session in use, which is what
+   * happens next anyway. `timeoutMs` caps this call below the client's usual timeout.
+   */
+  async getDcApiRequests(id: string, timeoutMs?: number): Promise<DcApiRequest[]> {
+    const body = await this.call('GET', `/verification-session/${encodeURIComponent(id)}/request`, undefined, timeoutMs);
+    const digital = body['digital'];
+    const requests = isRecord(digital) ? digital['requests'] : undefined;
+    if (!Array.isArray(requests) || requests.length === 0 || requests.length > MAX_DC_API_REQUESTS) {
+      throw new VerifierError('The verifier answered without a Digital Credentials API request', false);
+    }
+    const out: DcApiRequest[] = [];
+    for (const request of requests) {
+      if (!isRecord(request) || typeof request['protocol'] !== 'string' || request['protocol'] === '' || !isRecord(request['data'])) {
+        throw new VerifierError('The verifier answered with a malformed Digital Credentials API request', false);
+      }
+      out.push({ protocol: request['protocol'], data: request['data'] });
+    }
+    return out;
+  }
+
+  private async call(
+    method: 'GET' | 'POST',
+    path: string,
+    body?: Record<string, unknown>,
+    timeoutMs?: number,
+  ): Promise<Record<string, unknown>> {
     const headers: Record<string, string> = { Accept: 'application/json' };
     if (body !== undefined) {
       headers['Content-Type'] = 'application/json';
@@ -94,7 +159,7 @@ export class VerifierClient {
         method,
         headers,
         body: body === undefined ? null : JSON.stringify(body),
-        signal: AbortSignal.timeout(this.timeoutMs),
+        signal: AbortSignal.timeout(Math.max(1, Math.min(this.timeoutMs, timeoutMs ?? this.timeoutMs))),
       });
       const length = Number(response.headers.get('content-length') ?? '0');
       if (length > MAX_SESSION_BYTES) {

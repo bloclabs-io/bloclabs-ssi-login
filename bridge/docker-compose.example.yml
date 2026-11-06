@@ -38,6 +38,11 @@ services:
       # type must be trusted on chain; the attempt fails closed when the registry cannot answer.
       # FIREFLY_REGISTRY_API: "trusted-issuer-registry"
       BRIDGE_LOG_LEVEL: "info"
+      # Same-device login through the browser's Digital Credentials API: the origin of every
+      # login page (scheme, host and port, no path) and the verifier as browsers reach it.
+      # Leave both out to offer the QR code and wallet link only.
+      # BRIDGE_DC_API_ORIGINS: "https://<wordpress-host>"
+      # VERIFIER_PUBLIC_URL: "https://<verifier-public-host>"
       # Named queries. `default` is what the plugin asks for unless its `credential_query`
       # setting says otherwise: one SD-JWT VC with cryptographic holder binding (the DCQL
       # default), signed by a listed issuer, in its validity period.

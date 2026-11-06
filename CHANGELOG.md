@@ -7,6 +7,14 @@
 - The Docker demo's registry owner is a separate key from the bridge's signing key. `setup.sh` loads that key into the signer only while it deploys the registry and calls `setIssuer`, then removes it, so the bridge can attest and cannot change the trust list (#67).
 - The Docker demo deploys `TrustedIssuerRegistry`, trusts the generated issuer for the member credential type, and sets the bridge's `FIREFLY_REGISTRY_API`, so login is checked on chain the way the current bridge requires. A setup that finds the FireFly API already published reuses that contract instead of deploying another one (#67).
 - One-command Docker demo under `demo/`: WordPress, FireFly v1.5.0, a Besu QBFT chain, the verifier bridge and walt.id 1.2.0 issuer, wallet and verifier. The issuer key is generated at first start and is not committed. Walkthrough in the README (#67).
+- Same-device login through the browser's Digital Credentials API (#76). With `BRIDGE_DC_API_ORIGINS` and
+  `VERIFIER_PUBLIC_URL` set, the bridge opens a second walt.id session (`dc_api_openid4vp`, bound to the login
+  pages' origins) next to the QR code's and returns it as `dc_api`: the `requests` for `navigator.credentials.get`
+  and the verifier's `response_url`. Where the browser has the API, the login page asks the wallet through it on
+  the click, posts the answer to the verifier without cookies, and falls back to the QR code and wallet link when
+  the prompt is dismissed, unsupported or undeliverable; whichever session answers first is attested once under
+  the attempt's correlation id. Without the setting or the API nothing changes. docs/BRIDGE-API.md defines the
+  field.
 - Auto-provisioned accounts take their display, first and last name from the disclosed `given_name` and `family_name` when the credential has no `name` claim, as SD-JWT VC identity credentials usually don't; the display name still falls back to the login, and the e-mail claim is still never used (#56).
 - ADR 0006: issuer trust moves from the bridge's walt.id `allowed-issuer` policy to an owner-governed on-chain
   `TrustedIssuerRegistry` of `(issuer, vct)` pairs, which the bridge queries through FireFly before it attests, with
