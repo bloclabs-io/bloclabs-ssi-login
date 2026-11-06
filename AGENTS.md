@@ -23,6 +23,22 @@ Roles since 2026-11-04 (founder): Britney tests and deploys; Fable, Codex and Gr
 - Say what you ran and what you couldn't verify.
 - When the newest Codex review has no unresolved P0 or P1, post a comment on the pull request with `Handoff: test` on a line of its own. A `Handoff:` line in the description doesn't count.
 
+## blocLabs look and feel
+
+The plugin is generic: on any site its UI follows that site's theme, and its defaults stay WordPress's own (see the `--bloclabs-ssi-button-*` custom properties in `assets/css/login.css`). Anything blocLabs-branded (the demo in `demo/`, screenshots, docs images, the blocLabs site's own overrides) uses the blocLabs theme, measured on bloclabs.io on 2026-11-06:
+
+| Token | Value |
+|---|---|
+| Primary (accent) | `#ff782d` (rgb 255,120,45) |
+| Emphasis / price | `#f24c0a` |
+| Body text | `#666`; headings and strong text `#333` |
+| Light background | `#f7f7fa`; page background `#fff` |
+| Borders | `#e8e8e8` |
+| Fonts | Barlow (body, inputs), Exo (headings, labels, buttons) |
+| Shapes | pill buttons (60px radius), cards and fields with 20px / 12px corners |
+
+Contrast: white text on `#ff782d` is about 2.6:1 and fails WCAG AA, so orange buttons carry dark text (`#333` is about 4.8:1, `#000` about 8:1) or use orange as an accent only. Orange text on white also fails for body-size text.
+
 ## Tests
 
 ```bash
