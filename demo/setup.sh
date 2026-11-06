@@ -14,93 +14,46 @@ if ! command -v docker >/dev/null 2>&1 || ! docker compose version >/dev/null 2>
 	exit 1
 fi
 
-owner_loaded=0
-heartbeat_pid=0
-
-owner_keystore_name() {
-	sh ./bin/signer-wallet.sh filename --address-file runtime/registry-owner.address
-}
-
-# A killed setup used to leave the owner keystore in signer/, and the next
-# start loaded it. Delete that leftover before any container starts, and
-# never copy it back: the running signer keeps its wallet on a tmpfs.
+# A killed setup used to leave the owner keystore in signer/. Delete that
+# leftover before any container starts. The registry owner is never loaded
+# into FireFly's signer; deploy signs with a signer the bridge cannot reach.
 strip_stored_owner_key() {
 	if [[ -f runtime/registry-owner.address && -d signer ]]; then
 		sh ./bin/signer-wallet.sh strip --dir signer --address-file runtime/registry-owner.address
 	fi
 }
 
-start_heartbeat() {
-	stop_heartbeat
-	docker compose exec -T ethsigner /bin/sh -c 'date +%s > /run/setup-heartbeat'
-	local parent=$$
-	# The refresh loop exits when this script's process is gone, including
-	# kill -9, because it watches the parent pid rather than a trap.
-	(
-		while kill -0 "${parent}" 2>/dev/null; do
-			docker compose exec -T ethsigner /bin/sh -c 'date +%s > /run/setup-heartbeat' >/dev/null 2>&1 || true
-			sleep 5
-		done
-	) &
-	heartbeat_pid=$!
-}
-
-stop_heartbeat() {
-	if [[ "${heartbeat_pid}" -ne 0 ]]; then
-		kill "${heartbeat_pid}" 2>/dev/null || true
-		wait "${heartbeat_pid}" 2>/dev/null || true
-		heartbeat_pid=0
+start_owner_signer() {
+	local file attempt cid status
+	if [[ ! -f runtime/registry-owner.address ]]; then
+		echo "The registry owner address is missing." >&2
+		return 1
 	fi
-}
-
-rescan_signer() {
-	local before now attempt code
-	before="$(docker compose exec -T ethsigner cat /run/signer-generation | tr -d '[:space:]')"
-	docker compose exec -T ethsigner /bin/sh -c 'kill -USR1 1'
-	for attempt in $(seq 1 40); do
-		now="$(docker compose exec -T ethsigner cat /run/signer-generation 2>/dev/null | tr -d '[:space:]' || true)"
-		code="$(docker compose exec -T ethsigner curl -sf -o /dev/null -w '%{http_code}' -X POST -H 'Content-Type: application/json' -d '{"jsonrpc":"2.0","method":"net_version","params":[],"id":1}' http://127.0.0.1:8545/ 2>/dev/null || true)"
-		code="${code//$'\r'/}"
-		now="${now//$'\r'/}"
-		if [[ -n "${now}" && "${now}" != "${before}" && "${code}" == "200" ]]; then
-			return 0
-		fi
-		sleep 1
-	done
-	echo "The signer did not reload." >&2
-	docker compose logs ethsigner >&2 || true
-	return 1
-}
-
-# Copy the owner keystore into the running signer's tmpfs, not into signer/.
-# The entrypoint drops it if this script stops refreshing the heartbeat.
-load_registry_owner() {
-	local file
-	file="$(owner_keystore_name)"
-	if [[ ! -f "registry-owner/keystore/${file}" || ! -f "registry-owner/keystore/${file}.toml" || ! -f "registry-owner/password" ]]; then
+	file="$(sh ./bin/signer-wallet.sh filename --address-file runtime/registry-owner.address)"
+	if [[ ! -f "registry-owner/keystore/${file}" || ! -f "registry-owner/password" ]]; then
 		echo "The registry owner key is missing. Reset with: docker compose down -v && rm -rf runtime signer registry-owner" >&2
 		return 1
 	fi
-	start_heartbeat
-	owner_loaded=1
-	docker compose cp "registry-owner/keystore/${file}" "ethsigner:/data/keystore/${file}"
-	docker compose cp "registry-owner/keystore/${file}.toml" "ethsigner:/data/keystore/${file}.toml"
-	docker compose cp "registry-owner/password" "ethsigner:/data/registry-owner.password"
-	docker compose exec -T ethsigner /bin/sh -c "chmod 644 '/data/keystore/${file}' '/data/keystore/${file}.toml' /data/registry-owner.password"
-	rescan_signer
+	docker compose --profile setup up -d --no-deps --force-recreate owner-signer
+	for attempt in $(seq 1 40); do
+		cid="$(docker compose --profile setup ps -q owner-signer)"
+		if [[ -n "${cid}" ]]; then
+			status="$(docker inspect -f '{{if .State.Health}}{{.State.Health.Status}}{{end}}' "${cid}" 2>/dev/null || true)"
+			status="${status//$'\r'/}"
+			if [[ "${status}" == "healthy" ]]; then
+				return 0
+			fi
+		fi
+		sleep 2
+	done
+	echo "The registry-owner signer did not become healthy." >&2
+	docker compose --profile setup logs owner-signer >&2 || true
+	return 1
 }
 
-unload_registry_owner() {
-	local file
-	stop_heartbeat
-	if [[ "${owner_loaded}" -ne 1 ]]; then
-		return 0
-	fi
-	file="$(owner_keystore_name)"
-	owner_loaded=0
-	strip_stored_owner_key
-	docker compose exec -T ethsigner /bin/sh -c "rm -f '/data/keystore/${file}' '/data/keystore/${file}.toml' /data/registry-owner.password" || true
-	rescan_signer || true
+stop_owner_signer() {
+	docker compose --profile setup stop owner-signer >/dev/null 2>&1 || true
+	docker compose --profile setup rm -f owner-signer >/dev/null 2>&1 || true
 }
 
 wait_http() {
@@ -171,15 +124,15 @@ fi
 tr -d '\r' <"${compiled}" > runtime/contract.json
 rm -f "${compiled}"
 
-echo "Loading the registry owner into the signer..."
-trap unload_registry_owner EXIT
-load_registry_owner
+echo "Starting the registry-owner signer on the setup network..."
+trap stop_owner_signer EXIT
+start_owner_signer
 
 echo "Deploying the attestor and the trusted-issuer registry, then requesting a credential offer..."
 docker compose run --rm --no-deps --entrypoint node keys /opt/demo/deploy.mjs
 
-echo "Removing the registry owner from the signer..."
-unload_registry_owner
+echo "Stopping the registry-owner signer..."
+stop_owner_signer
 trap - EXIT
 
 echo "Waiting for WordPress..."

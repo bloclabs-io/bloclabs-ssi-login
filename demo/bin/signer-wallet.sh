@@ -8,7 +8,7 @@
 set -eu
 
 usage() {
-	echo "usage: signer-wallet.sh filename|strip|prepare|heartbeat-stale ..." >&2
+	echo "usage: signer-wallet.sh filename|strip|prepare|install-owner|heartbeat-stale ..." >&2
 	exit 2
 }
 
@@ -119,6 +119,45 @@ prepare)
 	cp "${attest}/keystore/${signer}.toml" "${dest}/keystore/${signer}.toml"
 	cp "${attest}/password" "${dest}/password"
 	chmod 644 "${dest}/keystore/${signer}" "${dest}/keystore/${signer}.toml" "${dest}/password"
+	;;
+install-owner)
+	source=""
+	dest=""
+	address_file=""
+	while [ "$#" -gt 0 ]; do
+		case "$1" in
+		--source)
+			source="$2"
+			shift 2
+			;;
+		--dest)
+			dest="$2"
+			shift 2
+			;;
+		--address-file)
+			address_file="$2"
+			shift 2
+			;;
+		*)
+			usage
+			;;
+		esac
+	done
+	if [ -z "${source}" ] || [ -z "${dest}" ] || [ -z "${address_file}" ]; then
+		echo "install-owner needs --source, --dest and --address-file" >&2
+		exit 1
+	fi
+	owner="$(read_address_file "${address_file}")"
+	if [ -z "${owner}" ] || [ ! -f "${source}/keystore/${owner}" ] || [ ! -f "${source}/keystore/${owner}.toml" ] || [ ! -f "${source}/password" ]; then
+		echo "the registry owner keystore is missing" >&2
+		exit 1
+	fi
+	rm -rf "${dest}/keystore" "${dest}/password" "${dest}/registry-owner.password"
+	mkdir -p "${dest}/keystore"
+	cp "${source}/keystore/${owner}" "${dest}/keystore/${owner}"
+	cp "${source}/keystore/${owner}.toml" "${dest}/keystore/${owner}.toml"
+	cp "${source}/password" "${dest}/registry-owner.password"
+	chmod 644 "${dest}/keystore/${owner}" "${dest}/keystore/${owner}.toml" "${dest}/registry-owner.password"
 	;;
 heartbeat-stale)
 	now="${1:-}"

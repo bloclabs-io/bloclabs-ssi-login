@@ -11,7 +11,7 @@ import { tmpdir } from 'node:os';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-import { demoSigningPlan } from './deploy.mjs';
+import { demoSigningPlan, OWNER_SIGNER_URL, setIssuerCalldata } from './deploy.mjs';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const walletScript = join(here, 'signer-wallet.sh');
@@ -122,15 +122,71 @@ test('a stale owner key in the signer directory is removed and is not copied int
 	}
 });
 
-test('the signer drops an owner key when setup stops refreshing the heartbeat', () => {
-	const fresh = run(['heartbeat-stale', '100', '90']);
-	assert.equal(fresh.status, 1);
-	const stale = run(['heartbeat-stale', '100', '70']);
-	assert.equal(stale.status, 0);
-	const missing = run(['heartbeat-stale', '100', '']);
-	assert.equal(missing.status, 0);
-	const source = readFileSync(entrypoint, 'utf8');
-	assert.match(source, /heartbeat-stale "\$\{now\}" "\$\{beat\}"/);
-	assert.match(source, /signer-wallet\.sh prepare/);
-	assert.doesNotMatch(source, /\/registry-owner\//);
+function serviceBlock(name) {
+	const text = readFileSync(join(here, '..', 'docker-compose.yml'), 'utf8');
+	const lines = text.split('\n');
+	const start = lines.findIndex((line) => line === `  ${name}:`);
+	assert.ok(start >= 0, name);
+	let end = lines.length;
+	for (let index = start + 1; index < lines.length; index += 1) {
+		if (/^  [a-z0-9-]+:$/.test(lines[index])) {
+			end = index;
+			break;
+		}
+	}
+	return lines.slice(start, end).join('\n');
+}
+
+test('setIssuer calldata trusts the issuer and is signed outside FireFly', () => {
+	const data = setIssuerCalldata('did:example:issuer', 'urn:example:credential');
+	assert.match(data, /^0x40976086/);
+	assert.match(data, /0{63}1/);
+	assert.equal(OWNER_SIGNER_URL, 'http://owner-signer:8545');
+	const deploy = readFileSync(join(here, 'deploy.mjs'), 'utf8');
+	assert.equal(deploy.includes('invoke/setIssuer'), false);
+	assert.match(deploy, /ownerTransaction\(\{[\s\S]*from: plan\.registry\.key/);
+});
+
+function networksOf(name) {
+	const match = serviceBlock(name).match(/^    networks:.*$/m);
+	assert.ok(match, `${name} networks`);
+	return match[0].trim();
+}
+
+test('the owner signer is on a network the bridge does not join', () => {
+	assert.equal(networksOf('owner-signer'), 'networks: [setup]');
+	assert.equal(networksOf('bridge'), 'networks: [demo]');
+	assert.equal(networksOf('ethsigner'), 'networks: [demo]');
+	assert.equal(networksOf('firefly'), 'networks: [demo]');
+	assert.equal(networksOf('besu'), 'networks: [demo, setup]');
+	assert.equal(networksOf('keys'), 'networks: [demo, setup]');
+	const setup = readFileSync(join(here, '..', 'setup.sh'), 'utf8');
+	assert.equal(setup.includes('docker compose cp'), false);
+	assert.equal(setup.includes('ethsigner:/data'), false);
+	assert.match(setup, /owner-signer/);
+	const signerEntrypoint = readFileSync(entrypoint, 'utf8');
+	assert.match(signerEntrypoint, /signer-wallet\.sh prepare/);
+	assert.doesNotMatch(signerEntrypoint, /install-owner/);
+});
+
+test('install-owner copies only the registry owner key', () => {
+	const dir = generate();
+	try {
+		const owner = keystoreName(address(dir, 'registry-owner.address'));
+		const signer = keystoreName(address(dir, 'signer.address'));
+		const dest = join(dir, 'owner-wallet');
+		const installed = run([
+			'install-owner',
+			'--source', join(dir, 'owner'),
+			'--dest', dest,
+			'--address-file', join(dir, 'runtime', 'registry-owner.address'),
+		]);
+		assert.equal(installed.status, 0, installed.stderr);
+		assert.deepEqual(readdirSync(join(dest, 'keystore')).sort(), [owner, `${owner}.toml`].sort());
+		assert.equal(existsSync(join(dest, 'keystore', signer)), false);
+		assert.equal(existsSync(join(dest, 'password')), false);
+		assert.equal(existsSync(join(dest, 'registry-owner.password')), true);
+	} finally {
+		rmSync(dir, { recursive: true, force: true });
+	}
 });

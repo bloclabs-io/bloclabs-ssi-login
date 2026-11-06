@@ -22,7 +22,7 @@ services:
       - ./signer:/signer
       - ./registry-owner:/registry-owner
     command: ["node", "/opt/demo/init-keys.mjs"]
-    networks: [demo]
+    networks: [demo, setup]
 
   besu:
     image: hyperledger/besu:24.12.2
@@ -47,7 +47,7 @@ services:
       - --min-gas-price=0
       - --sync-mode=FULL
       - --discovery-enabled=false
-    networks: [demo]
+    networks: [demo, setup]
 
   ethsigner:
     image: ghcr.io/hyperledger-firefly/signer:v1.2.1
@@ -61,7 +61,6 @@ services:
     entrypoint: ["/bin/sh", "/entrypoint.sh"]
     tmpfs:
       - /data
-      - /run
     volumes:
       - ./runtime:/runtime:ro
       - ./signer:/attest:ro
@@ -84,6 +83,43 @@ services:
       retries: 40
       start_period: 15s
     networks: [demo]
+
+  # Signs only the registry-owner key, and only on the setup network.
+  # The bridge is not on that network, and FireFly's signer never loads this key.
+  owner-signer:
+    profiles: ["setup"]
+    image: ghcr.io/hyperledger-firefly/signer:v1.2.1
+    user: "0:0"
+    restart: "no"
+    depends_on:
+      besu:
+        condition: service_started
+    entrypoint: ["/bin/sh", "/owner-entrypoint.sh"]
+    tmpfs:
+      - /data
+    volumes:
+      - ./runtime:/runtime:ro
+      - ./registry-owner:/owner:ro
+      - ./owner-signer.yaml:/owner-signer.yaml:ro
+      - ./bin/owner-entrypoint.sh:/owner-entrypoint.sh:ro
+      - ./bin/signer-wallet.sh:/signer-wallet.sh:ro
+    healthcheck:
+      test:
+        - CMD
+        - curl
+        - -sf
+        - -X
+        - POST
+        - -H
+        - Content-Type: application/json
+        - -d
+        - '{"jsonrpc":"2.0","method":"net_version","params":[],"id":1}'
+        - http://127.0.0.1:8545/
+      interval: 5s
+      timeout: 3s
+      retries: 20
+      start_period: 5s
+    networks: [setup]
 
   evmconnect:
     image: ghcr.io/hyperledger-firefly/evmconnect:v1.5.1
@@ -300,6 +336,10 @@ services:
 networks:
   demo:
     name: bloclabs-ssi-demo
+  # The registry-owner signer and Besu. The bridge is not attached, so it
+  # cannot ask this signer to call setIssuer.
+  setup:
+    name: bloclabs-ssi-demo-setup
 
 volumes:
   besu_data:

@@ -1,0 +1,17 @@
+# Signer for the registry owner only. It is attached to the setup network,
+# which the bridge does not join. No key material belongs in this file.
+server:
+  port: 8545
+  address: 0.0.0.0
+backend:
+  url: http://besu:8545
+  chainId: 1337
+fileWallet:
+  path: /data/keystore
+  filenames:
+    primaryExt: .toml
+  metadata:
+    keyFileProperty: '{{ index .signing "key-file" }}'
+    passwordFileProperty: '{{ index .signing "password-file" }}'
+log:
+  level: info

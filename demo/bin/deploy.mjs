@@ -10,6 +10,8 @@
 import { readFileSync, writeFileSync } from 'node:fs';
 import { pathToFileURL } from 'node:url';
 
+import { keccak256 } from './lib.mjs';
+
 const root = (process.env.FIREFLY_URL || 'http://firefly:5000').replace(/\/$/, '');
 const issuer = (process.env.ISSUER_URL || 'http://issuer.demo').replace(/\/$/, '');
 const runtime = process.env.DEMO_RUNTIME || '/runtime';
@@ -67,6 +69,43 @@ function ns(path) {
 }
 
 const MEMBER_VCT = 'http://issuer.demo/openid4vci/member';
+
+/** JSON-RPC of the registry-owner signer. The bridge is not on its network. */
+export const OWNER_SIGNER_URL = (process.env.OWNER_SIGNER_URL || 'http://owner-signer:8545').replace(/\/$/, '');
+
+function abiWord(value) {
+	return Buffer.from(BigInt(value).toString(16).padStart(64, '0'), 'hex');
+}
+
+function abiBytes(value) {
+	const padded = Buffer.alloc(Math.ceil(value.length / 32) * 32);
+	value.copy(padded);
+	return Buffer.concat([abiWord(value.length), padded]);
+}
+
+/**
+ * ABI calldata for TrustedIssuerRegistry.setIssuer(issuer, vct, true).
+ * The transaction is signed by the owner signer, not by FireFly.
+ *
+ * @param {string} issuer
+ * @param {string} vct
+ * @returns {string}
+ */
+export function setIssuerCalldata(issuer, vct) {
+	const selector = keccak256(Buffer.from('setIssuer(string,string,bool)')).subarray(0, 4);
+	const issuerBytes = Buffer.from(issuer, 'utf8');
+	const vctBytes = Buffer.from(vct, 'utf8');
+	const encodedIssuer = abiBytes(issuerBytes);
+	const head = 32 * 3;
+	return `0x${Buffer.concat([
+		selector,
+		abiWord(head),
+		abiWord(head + encodedIssuer.length),
+		abiWord(1),
+		encodedIssuer,
+		abiBytes(vctBytes),
+	]).toString('hex')}`;
+}
 
 function contractArtifact(contractName) {
 	const raw = strip(readFileSync(`${runtime}/contract.json`, 'utf8'));
@@ -259,19 +298,56 @@ async function attestor(plan) {
 	return { address, interfaceId: publishedInterface, listenerId, signer: plan.attestor.key };
 }
 
+async function ownerRpc(method, params) {
+	const body = await call(OWNER_SIGNER_URL, {
+		method: 'POST',
+		headers: { 'content-type': 'application/json' },
+		body: JSON.stringify({ jsonrpc: '2.0', id: 1, method, params }),
+	}, 15);
+	if (!body || typeof body !== 'object' || body.error) {
+		throw new Error(`${method} failed: ${JSON.stringify(body && body.error ? body.error : body)}`);
+	}
+	return body.result;
+}
+
+async function ownerTransaction(tx) {
+	const priced = { ...tx, gasPrice: '0x0' };
+	const gas = await ownerRpc('eth_estimateGas', [priced]);
+	const hash = await ownerRpc('eth_sendTransaction', [{ ...priced, gas }]);
+	if (typeof hash !== 'string' || !hash.startsWith('0x')) {
+		throw new Error(`owner signer did not return a transaction hash: ${JSON.stringify(hash)}`);
+	}
+	for (let attempt = 1; attempt <= 40; attempt += 1) {
+		const receipt = await ownerRpc('eth_getTransactionReceipt', [hash]);
+		if (receipt) {
+			if (receipt.status !== '0x1') {
+				throw new Error(`owner transaction ${hash} failed: ${JSON.stringify(receipt)}`);
+			}
+			return receipt;
+		}
+		await new Promise((resolve) => setTimeout(resolve, 2000));
+	}
+	throw new Error(`owner transaction ${hash} was not mined`);
+}
+
 async function registry(plan, did) {
 	const api = await getApi('trusted-issuer-registry', 10);
 	let address = api?.location?.address || '';
 	if (!address) {
 		process.stdout.write('deploying the trusted-issuer registry\n');
-		address = await deployContract('TrustedIssuerRegistry', plan.registry.key, plan.registry.input);
+		const { bytecode } = contractArtifact('TrustedIssuerRegistry');
+		const receipt = await ownerTransaction({ from: plan.registry.key, data: bytecode });
+		address = receipt.contractAddress;
+		if (typeof address !== 'string' || address.length === 0) {
+			throw new Error(`registry deployment did not return a contract address: ${JSON.stringify(receipt)}`);
+		}
 		address = (await publishApi('trusted-issuer-registry', 'TrustedIssuerRegistry', address)).address;
 	}
-	await call(`${ns('apis/trusted-issuer-registry/invoke/setIssuer')}?confirm=true`, {
-		method: 'POST',
-		headers: { 'content-type': 'application/json' },
-		body: JSON.stringify(plan.setIssuer(did, MEMBER_VCT)),
-	}, 30);
+	await ownerTransaction({
+		from: plan.registry.key,
+		to: address,
+		data: setIssuerCalldata(did, MEMBER_VCT),
+	});
 	process.stdout.write(`registry ${address}\n`);
 	return address;
 }
