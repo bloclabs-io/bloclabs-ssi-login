@@ -2,6 +2,10 @@
 
 ## 0.1.0-dev (unreleased)
 
+- Bridge: with `FIREFLY_REGISTRY_API` set to the `TrustedIssuerRegistry` contract's FireFly API, every presented
+  credential's issuer and `vct` are checked on chain (`isTrusted`) before the decision is attested. An untrusted pair
+  is attested as a rejection (`result = 2`); when FireFly cannot answer, the attempt fails closed and nothing is
+  attested. Unset, the walt.id `allowed-issuer` policy decides alone, as before (#73).
 - Handoff labels use live PR draft/state data and an Actions-bot head checkpoint so replaced push jobs and delayed old handoffs cannot preserve an earlier approval (bloclabs-io/blocLabs-LearnPress-API-Extension#97).
 
 - Correct finality, webhook delivery, contract build and claim-retention documentation; add regression coverage for atomic state transitions, login ordering, cookie attributes and version-aware WordPress test installs (#33).

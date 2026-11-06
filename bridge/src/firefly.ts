@@ -1,5 +1,6 @@
 /**
- * FireFly contract API client: one call per login decision.
+ * FireFly contract API client: one call per login decision, and, when a
+ * trusted-issuer registry is configured, one query before it.
  *
  *   POST /api/v1/namespaces/{ns}/apis/{api}/invoke/attest?confirm=true
  *   {"key": <verifier address>, "input": {...}, "idempotencyKey": "bloclabs-ssi-login:<correlation id>"}
@@ -9,6 +10,13 @@
  * 409 FF10431 ("Idempotency key ... already used for transaction ...") and the
  * bridge reads that transaction's status instead of sending again.
  * (hyperledger/firefly v1.5.0: internal/contracts/manager.go, coremsgs FF10431.)
+ *
+ *   POST /api/v1/namespaces/{ns}/apis/{registry}/query/isTrusted
+ *   {"input": {"issuer": "...", "vct": "..."}}  ->  {"output": true|false}
+ *
+ * A view call on the TrustedIssuerRegistry contract: nothing is signed or
+ * written, so it can be repeated freely, and any answer other than a boolean
+ * is an error for the caller to fail closed on.
  */
 
 import type { FireFlyConfig } from './config.js';
@@ -88,6 +96,31 @@ export class FireFlyClient {
       return { operationId: null, transactionId, reused: true };
     }
     throw new FireFlyError(`FireFly refused the attestation: ${message}`, status >= 500, status);
+  }
+
+  /**
+   * `TrustedIssuerRegistry.isTrusted(issuer, vct)` through the registry's contract API
+   * (`FIREFLY_REGISTRY_API`). Resolves to the contract's answer, and to nothing else:
+   * an unreachable FireFly, an unknown API, or an output that is not a boolean is a
+   * FireFlyError, so that the caller never mistakes a missing answer for a decision.
+   */
+  async isTrusted(issuer: string, vct: string): Promise<boolean> {
+    const registry = this.config.registryApiName;
+    if (registry === undefined) {
+      throw new FireFlyError('No trusted-issuer registry is configured (FIREFLY_REGISTRY_API)', false);
+    }
+    const path = `apis/${encodeURIComponent(registry)}/query/isTrusted`;
+    const { status, data, text } = await this.request('POST', path, { input: { issuer, vct } }, this.queryTimeoutMs);
+
+    if (status >= 200 && status < 300) {
+      const output = data?.['output'];
+      if (output === true || output === false) {
+        return output;
+      }
+      throw new FireFlyError('The trusted-issuer registry answered without a boolean output', false, status);
+    }
+    const message = typeof data?.['error'] === 'string' ? data['error'] : `HTTP ${status} ${text.slice(0, 200)}`;
+    throw new FireFlyError(`The trusted-issuer registry could not be queried: ${message}`, status >= 500, status);
   }
 
   /** `Succeeded`, `Pending` or `Failed` (FireFly TransactionStatus.status). */
