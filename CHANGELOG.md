@@ -2,6 +2,8 @@
 
 ## 0.4.0-dev (unreleased)
 
+- `npm run test:wp-env` runs the WordPress integration suite in wp-env (the WordPress 6.6.10 release zip on PHP 8.3, single site and multisite). The first start downloads that zip instead of cloning the WordPress git repository. Pull requests run that job as well as the existing MySQL integration jobs (#68).
+
 ## 0.3.0 (2026-11-06)
 
 First release. The first end-to-end logins with a real phone wallet (Paradym on iOS) ran on 2026-11-06, same device

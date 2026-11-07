@@ -79,10 +79,13 @@ composer install
 composer test    # PHPUnit
 composer test:integration   # WordPress integration suite (PHPUnit 9, needs MySQL)
 WP_MULTISITE=1 composer test:integration   # the same suite on a multisite network
+npm install && npm run test:wp-env   # the same suite in Docker: WordPress 6.6.10 release zip, single site and multisite
 composer phpcs   # WordPress coding standards
 npm install && npm run vendor   # optional: copies the QR encoder into assets/vendor/
 cd bridge && npm ci && npm test  # the verifier bridge (Node 22): build and tests
 ```
+
+`npm run test:wp-env` needs Docker and Node.js 22.13 or newer. The first start downloads the WordPress 6.6.10 release zip named in `.wp-env.json`. It does not clone the WordPress git repository.
 
 Without PHP locally: `docker run --rm -v "$PWD:/app" -w /app composer:2 sh -c "composer install && composer test"`.
 
@@ -94,7 +97,7 @@ Without PHP locally: `docker run --rm -v "$PWD:/app" -w /app composer:2 sh -c "c
 - **0.3** (this release) "Link a credential" on the profile screen (done); same-device login through the browser's
   [Digital Credentials API](https://www.w3.org/TR/digital-credentials/) (built, off unless configured); signed
   requests for phone wallets (done); on-chain trusted-issuer registry, brought forward from 0.4 (done);
-  integration tests on `wp-env` (open).
+  integration tests on `wp-env` (done).
 - **0.4** Agent login that issues an application token instead of a cookie
   ([ADR 0007](docs/adr/0007-agent-login.md), in progress).
 - **1.0** External security review, WordPress.org listing (founder decision).
