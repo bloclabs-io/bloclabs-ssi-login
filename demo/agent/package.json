@@ -1,0 +1,17 @@
+{
+  "name": "bloclabs-ssi-agent",
+  "private": true,
+  "version": "0.4.0-dev",
+  "description": "Reference agent client for blocLabs SSI Login: logs in to WordPress with an SD-JWT VC and no browser, and gets an application token.",
+  "license": "GPL-2.0-or-later",
+  "type": "module",
+  "engines": {
+    "node": ">=22"
+  },
+  "bin": {
+    "bloclabs-ssi-agent": "./agent.mjs"
+  },
+  "scripts": {
+    "test": "node --test 'test/*.test.mjs'"
+  }
+}
