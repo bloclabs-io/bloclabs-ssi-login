@@ -41,6 +41,11 @@ final class InitiateController extends BrowserController {
 				'callback'            => array( $this, 'handle' ),
 				'permission_callback' => array( $this, 'check_page_request' ),
 				'args'                => array(
+					'purpose'     => array(
+						'type'    => 'string',
+						'enum'    => array( 'login', 'link' ),
+						'default' => 'login',
+					),
 					'redirect_to' => array(
 						'type'              => 'string',
 						'required'          => false,
@@ -55,6 +60,12 @@ final class InitiateController extends BrowserController {
 	 * @return \WP_REST_Response|\WP_Error
 	 */
 	public function handle( \WP_REST_Request $request ) {
+		if ( 'link' === $request->get_param( 'purpose' ) ) {
+			$allowed = ProfileAuthorization::check( $request );
+			if ( is_wp_error( $allowed ) ) {
+				return $allowed;
+			}
+		}
 		$unavailable = new \WP_Error( 'bloclabs_ssi_unavailable', __( 'Credential login is unavailable right now.', 'bloclabs-ssi-login' ), array( 'status' => 503 ) );
 
 		// The bridge's result route returns claims: never talk to a bridge that does not authenticate us.
@@ -84,7 +95,7 @@ final class InitiateController extends BrowserController {
 		}
 
 		try {
-			$attempt = $this->attempts->open( $binding, $ip_hash, $ttl, '' !== $redirect ? $redirect : null );
+			$attempt = $this->attempts->open( $binding, $ip_hash, $ttl, '' !== $redirect ? $redirect : null, 'link' === $request->get_param( 'purpose' ) ? 'link' : 'login', 'link' === $request->get_param( 'purpose' ) ? get_current_user_id() : null );
 		} catch ( \RuntimeException $e ) {
 			// No row (a missing or read-only table), so no attempt for the cookie to bind, and no 500 with a path in it.
 			$this->binding->clear();

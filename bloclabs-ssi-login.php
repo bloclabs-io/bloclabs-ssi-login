@@ -3,7 +3,7 @@
  * Plugin Name:       blocLabs SSI Login
  * Plugin URI:        https://github.com/bloclabs-io/bloclabs-ssi-login
  * Description:       Passwordless login with Verifiable Credentials (OpenID4VP). Every login decision is attested on chain and delivered to WordPress through Hyperledger FireFly event streams.
- * Version:           0.1.0-dev
+ * Version:           0.3.0
  * Requires at least: 6.6
  * Requires PHP:      8.1
  * Author:            blocLabs
@@ -22,7 +22,7 @@ namespace BlocLabs\SsiLogin;
 
 defined( 'ABSPATH' ) || exit;
 
-const VERSION     = '0.1.0-dev';
+const VERSION     = '0.3.0';
 const PLUGIN_FILE = __FILE__;
 const PLUGIN_DIR  = __DIR__;
 

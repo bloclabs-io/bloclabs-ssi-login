@@ -48,6 +48,24 @@ final class IdentityRepository {
 		return false !== $inserted;
 	}
 
+	/** @return list<array<string, mixed>> */
+	public function for_user( int $user_id ): array {
+		global $wpdb;
+		$table = Schema::identities_table();
+		return $wpdb->get_results( $wpdb->prepare( "SELECT id, subject_label FROM {$table} WHERE user_id = %d ORDER BY id", $user_id ), ARRAY_A ); // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared
+	}
+
+	public function unlink_owned( int $identity_id, int $user_id ): bool {
+		global $wpdb;
+		return 1 === $wpdb->delete(
+			Schema::identities_table(),
+			array(
+				'id'      => $identity_id,
+				'user_id' => $user_id,
+			)
+		);
+	}
+
 	public function touch( string $subject_hash ): void {
 		global $wpdb;
 		$wpdb->update(

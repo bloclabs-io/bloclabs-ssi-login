@@ -4,7 +4,7 @@ What an attacker might try, and what stops them. "Bridge" is the verifier sideca
 
 | # | Threat | Mitigation | Where |
 |---|---|---|---|
-| 1 | **Cross-device QR relay.** The attacker opens the login page, sends the QR code to a victim (phishing page, chat), and the victim's wallet logs the attacker's browser in. | No cross-device flow fully prevents this. OpenID4VP 1.0 §14.2 admits its Response Code defence does not work across devices, and RFC 10027 (BCP 247) lists the mitigations used here: short-lived single-use requests (TTL 60–600 s, default 180), rate limits, and a request signed by the verifier's certified identity (`x509_san_dns:` client id), so the wallet can show who is asking. **Prefer same-device login through the Digital Credentials API** (roadmap), which binds the request to the page's origin. | Bridge, `InitiateController`, roadmap |
+| 1 | **Cross-device QR relay.** The attacker opens the login page, sends the QR code to a victim (phishing page, chat), and the victim's wallet logs the attacker's browser in. | No cross-device flow fully prevents this. OpenID4VP 1.0 §14.2 admits its Response Code defence does not work across devices, and RFC 10027 (BCP 247) lists the mitigations used here: short-lived single-use requests (TTL 60–600 s, default 180), rate limits, and a request signed by the verifier's certified identity (`x509_san_dns:` client id), so the wallet can show who is asking. **Prefer same-device login through the Digital Credentials API**, which binds the request to the page's origin: with `BRIDGE_DC_API_ORIGINS` set, a browser that has the API asks the wallet itself, the wallet binds its presentation to the page's origin, and the verifier checks that binding, so a relayed request cannot log another page in. The QR code remains the fallback. | Bridge (`dc_api`), `login.js`, `InitiateController` |
 | 2 | Guessing or stealing an attempt id to poll or complete someone else's login. | 128-bit `public_id` plus a 256-bit secret in an HttpOnly, SameSite=Strict cookie whose hash the attempt stores. The cookie is `__Host-` and `Secure` whenever the site's home URL is HTTPS, even behind a TLS proxy that hides HTTPS from PHP. Unknown and foreign attempts both answer 404. | `BrowserBinding`, `BrowserController::bound_attempt()` |
 | 3 | Cross-site requests to the login endpoints. | SameSite=Strict cookie plus a login-page token. The token is the same for every visitor (what WordPress computes for a logged-out user), so it is a cross-site check only, not a binding; unlike a regular nonce it also works for a logged-in visitor on wp-login.php. | `PageToken`, `BrowserController::check_page_request()` |
 | 4 | Forged webhook delivery. | Shared secret header (≥ 32 characters, constant-time compare) and optional IP allowlist on the direct peer address. The body is never trusted: the event is always re-read from FireFly by id (no setting turns this off), and a 404 is ignored. FireFly cannot sign webhooks (v1.5), which is why the re-read matters. | `WebhookController`, `AttestationProcessor` |
@@ -31,8 +31,10 @@ What an attacker might try, and what stops them. "Bridge" is the verifier sideca
 
 ## Residual risks
 
-- Threat 1 is reduced, not removed, until the Digital Credentials API path ships. Treat cross-device credential login
-  like any QR login: keep the TTL short and the wallet's display of the verifier identity meaningful.
+- Threat 1 is reduced, not removed, wherever the QR code is still what the holder uses: browsers without the
+  Digital Credentials API, wallets that do not answer through it, and sites whose bridge does not offer it. Treat
+  cross-device credential login like any QR login: keep the TTL short and the wallet's display of the verifier
+  identity meaningful.
 - The bridge holds the verifier's request-signing keys and the chain signing key. It is the most sensitive component;
   run it with the least network exposure that wallets allow.
 - Without `BLOCLABS_SSI_SUBJECT_KEY` in wp-config.php, the subject key lives in the same database as the identities
