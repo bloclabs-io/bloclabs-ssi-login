@@ -159,6 +159,7 @@ describe('presentation requests', () => {
     assert.equal(body.presentation_hash, presentationHash(vpToken));
     assert.equal(body.presentation_hash, sha256Hex(`{"login":[${JSON.stringify(SD_JWT_PRESENTATION)}]}`));
     assert.deepEqual(body.claims, { given_name: 'Ada', email: 'ada@example.com', address: { locality: 'London' } }, 'only what the query asked for');
+    assert.equal((result.body as { expires_at?: string }).expires_at, new Date(1_793_536_000 * 1000).toISOString(), 'the credential exp');
 
     const invoke = t.firefly.invokes[0]!;
     assert.equal(invoke.path, '/api/v1/namespaces/default/apis/ssi-login-attestor/invoke/attest?confirm=true');
@@ -313,6 +314,16 @@ describe('presentation requests', () => {
     const result = await t.call('GET', `/v1/presentation-requests/${id}/result`);
     assert.equal((result.body as { subject_id: string }).subject_id, did);
     assert.equal((t.firefly.invokes[0]!.body['input'] as Record<string, string>)['subjectCommitment'], '0x' + subjectCommitment(correlationId, BLINDING_SECRET, did));
+  });
+
+  it('omits expires_at when the credential has no NumericDate exp', async () => {
+    const { id } = await open();
+    t.verifier.setSession(id, successfulSession(id, { credentialData: credentialData({ exp: undefined }) }));
+    await t.verifier.fireCallback(id);
+    await t.bridge.idle();
+    const result = await t.call('GET', `/v1/presentation-requests/${id}/result`);
+    assert.equal(result.status, 200);
+    assert.equal(Object.hasOwn(result.body as object, 'expires_at'), false);
   });
 
   it('returns every disclosed claim but the registered ones for a query without claims', async () => {

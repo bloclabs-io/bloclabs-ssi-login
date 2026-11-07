@@ -73,7 +73,9 @@ sequenceDiagram
    crash can never attest twice: FireFly answers `409 FF10431` with the earlier transaction, and the bridge reads that
    transaction's status instead. Rejections are attested with `result = 2` and zero commitments.
 7. **Serves the result** to WordPress only after FireFly accepted the attestation, for the attempt lifetime plus a
-   minute, then deletes it. Claims are those at the DCQL claim paths the query asked for, nothing more.
+   minute, then deletes it. Claims are those at the DCQL claim paths the query asked for, nothing more. The result
+   also carries `expires_at` when the credential's `exp` is a NumericDate, so an agent token can be bounded by the
+   credential. An agent query never attests a credential of another type, or one with no such `exp`.
 
 Nothing personal is logged: request ids, states, FireFly operation ids and error codes only.
 
@@ -153,7 +155,41 @@ audience and `sd_hash` checks on the presentation, and the issuer signature on t
 
 `claims` decides what the wallet is asked to disclose and what `claims` in the result contains. A credential query
 without `claims` asks for the whole credential and returns every disclosed claim except the registered ones
-(`iss`, `iat`, `nbf`, `exp`, `cnf`, `vct`, `status`).
+(`iss`, `iat`, `nbf`, `exp`, `cnf`, `vct`, `status`). `exp`, when it is a NumericDate, is also returned on its own
+as `expires_at` (ISO 8601). A credential with no usable `exp` still verifies, and the field is omitted.
+
+### The agent query
+
+A query named `agent`, or any query with `"profile": "agent"`, is the agent-credential profile of
+[ADR 0007](../docs/adr/0007-agent-login.md). WordPress asks for it with `query: "agent"` (the
+`agent_credential_query` setting; the default name is `agent`). The bridge refuses to start unless that query
+pins `meta.vct_values` to the agent credential types and asks for `acts_for`, `scope`, `agent.name` and
+`agent.operator`. `cnf` is not one of those claims: it is the holder key the subject is derived from, and holder
+binding stays on. `exp` is not one either: the result reports it as `expires_at`, and a credential without a
+NumericDate `exp` is not attested, because a token must not outlive the credential.
+
+A presented credential whose `vct` is not one of the pinned values is not attested. With `FIREFLY_REGISTRY_API`
+set, the bridge then asks the registry `isTrusted(issuer, vct)` for the presented pair, the same check as for a
+person's credential. An issuer trusted for a login type is not trusted for the agent type unless that pair is
+on chain.
+
+```json
+"agent": {
+  "dcql_query": {
+    "credentials": [{
+      "id": "agent",
+      "format": "dc+sd-jwt",
+      "meta": {"vct_values": ["https://issuer.example.com/credentials/agent"]},
+      "claims": [
+        {"path": ["acts_for"]},
+        {"path": ["scope"]},
+        {"path": ["agent", "name"]},
+        {"path": ["agent", "operator"]}
+      ]
+    }]
+  }
+}
+```
 
 ## Running
 

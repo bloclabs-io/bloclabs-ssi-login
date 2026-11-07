@@ -2,6 +2,12 @@
 
 ## 0.4.0-dev (unreleased)
 
+- Bridge: the `agent` query profile and the credential's expiry (#92). A query named `agent`, or any query marked
+  `"profile": "agent"`, must pin `vct_values` and ask for `acts_for`, `scope`, `agent.name` and `agent.operator`.
+  A presented credential of another type, or one with no NumericDate `exp`, is not attested. The result route adds
+  optional `expires_at` from that `exp`, so an agent token can be bounded by the credential. With
+  `FIREFLY_REGISTRY_API`, the presented `(issuer, vct)` is the pair checked on chain.
+
 ## 0.3.0 (2026-11-06)
 
 First release. The first end-to-end logins with a real phone wallet (Paradym on iOS) ran on 2026-11-06, same device

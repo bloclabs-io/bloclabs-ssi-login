@@ -195,7 +195,7 @@ export class VerifierClient {
 
 export type Evaluation =
   | { kind: 'undecided'; status: string }
-  | { kind: 'verified'; subjectId: string; issuer: string | null; vct: string | null; claims: Record<string, unknown>; presentationHash: string }
+  | { kind: 'verified'; subjectId: string; issuer: string | null; vct: string | null; claims: Record<string, unknown>; presentationHash: string; expiresAt: string | null }
   | { kind: 'rejected'; presentationHash: string | null; failureType: string | null }
   /** A successful session the bridge cannot turn into a subject: never attested, logged as an error. */
   | { kind: 'inconsistent'; reason: string };
@@ -264,6 +264,18 @@ export function evaluateSession(session: Record<string, unknown>, query: QueryDe
     : typeof data['iss'] === 'string' ? data['iss'] : null;
   // The credential type (SD-JWT VC `vct`), the second half of the trusted-issuer registry key.
   const vct = typeof data['vct'] === 'string' && data['vct'] !== '' ? data['vct'] : null;
+  const expiresAt = credentialExpiresAt(data['exp']);
+  if (query.profile === 'agent') {
+    // The query pinned the type. A different vct is not an agent credential, even
+    // when the registry would trust that other pair (a login type, for instance).
+    if (vct === null || !pinnedVctValues(credentialQuery).includes(vct)) {
+      return { kind: 'inconsistent', reason: 'presented vct is not one the agent query pins' };
+    }
+    // The token must not outlive the credential, so a missing exp is not a decision.
+    if (expiresAt === null) {
+      return { kind: 'inconsistent', reason: 'agent credential has no NumericDate exp' };
+    }
+  }
 
   return {
     kind: 'verified',
@@ -272,7 +284,30 @@ export function evaluateSession(session: Record<string, unknown>, query: QueryDe
     vct,
     claims: selectClaims(data, credentialQuery.claims),
     presentationHash: presentationHash(vpToken),
+    expiresAt,
   };
+}
+
+/**
+ * The credential's `exp` as an ISO 8601 time, when it is an SD-JWT VC NumericDate:
+ * a finite number of seconds since the epoch. Anything else is not a bound WordPress
+ * can apply, so the result omits `expires_at`.
+ */
+export function credentialExpiresAt(exp: unknown): string | null {
+  if (typeof exp !== 'number' || !Number.isFinite(exp) || exp <= 0) {
+    return null;
+  }
+  const date = new Date(exp * 1000);
+  return Number.isNaN(date.getTime()) ? null : date.toISOString();
+}
+
+/** The credential types a query pins with `meta.vct_values`, or none. */
+function pinnedVctValues(credentialQuery: DcqlCredentialQuery): string[] {
+  const meta = credentialQuery.meta;
+  if (!isRecord(meta) || !Array.isArray(meta['vct_values'])) {
+    return [];
+  }
+  return meta['vct_values'].filter((value): value is string => typeof value === 'string' && value !== '');
 }
 
 function rawVpToken(session: Record<string, unknown>): Record<string, string[]> | undefined {
