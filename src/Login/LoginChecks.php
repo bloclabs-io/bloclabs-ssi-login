@@ -14,7 +14,8 @@
  *    `wp_authenticate` action, the `wp_authenticate_user` and `authenticate`
  *    filters, then `bloclabs_ssi_allow_login`; threat 16).
  *
- * Which user, and what the attempt turns into, stay with the caller.
+ * Which user, and what the attempt turns into, stay with the caller. The
+ * bearer filter reuses step 4's account checks on every token request.
  *
  * @package BlocLabs\SsiLogin
  */
@@ -90,13 +91,9 @@ final class LoginChecks {
 	/**
 	 * Step 4: the checks a password login would get, then the plugin's own veto.
 	 *
-	 * wp_signon() fires `wp_authenticate`, and core's password callbacks apply
-	 * `wp_authenticate_user` before they return a user; both are where lockout,
-	 * ban and disabled-account plugins refuse. Those callbacks return early for
-	 * a WP_User, so this method applies `wp_authenticate_user` itself (with an
-	 * empty password, as nothing was typed) before the `authenticate` filter,
-	 * which still runs the multisite spam check and whatever plugins hook there.
-	 * The veto must return exactly true to allow.
+	 * wp_signon() fires `wp_authenticate` first; then the account's own checks
+	 * (check_account()); then `bloclabs_ssi_allow_login`, which must return
+	 * exactly true to allow.
 	 */
 	public function check_user( \WP_User $user, PresentationResult $result ): ?\WP_Error {
 		$login    = $user->user_login;
@@ -104,14 +101,7 @@ final class LoginChecks {
 		/** This action is documented in wp-includes/user.php */
 		do_action_ref_array( 'wp_authenticate', array( &$login, &$password ) ); // phpcs:ignore WordPress.NamingConventions.PrefixAllGlobals.NonPrefixedHooknameFound -- core action, fired as wp_signon() does.
 
-		/** This filter is documented in wp-includes/user.php */
-		$refusal = self::refusal( apply_filters( 'wp_authenticate_user', $user, '' ), $user ); // phpcs:ignore WordPress.NamingConventions.PrefixAllGlobals.NonPrefixedHooknameFound -- core filter, as wp_authenticate_username_password() applies it.
-		if ( null !== $refusal ) {
-			return $refusal;
-		}
-
-		/** This filter is documented in wp-includes/pluggable.php */
-		$refusal = self::refusal( apply_filters( 'authenticate', $user, $user->user_login, '' ), $user ); // phpcs:ignore WordPress.NamingConventions.PrefixAllGlobals.NonPrefixedHooknameFound -- core filter, as wp_authenticate() applies it.
+		$refusal = self::check_account( $user );
 		if ( null !== $refusal ) {
 			return $refusal;
 		}
@@ -132,6 +122,31 @@ final class LoginChecks {
 		return is_wp_error( $allow )
 			? self::as_forbidden( $allow )
 			: new \WP_Error( 'bloclabs_ssi_refused', __( 'This account cannot log in right now.', 'bloclabs-ssi-login' ), array( 'status' => 403 ) );
+	}
+
+	/**
+	 * The account's own checks, as a password login applies them, with no
+	 * attempt involved: core's password callbacks apply `wp_authenticate_user`
+	 * before they return a user, and wp_authenticate() applies `authenticate`
+	 * after them; both are where lockout, ban and disabled-account plugins
+	 * refuse, and `authenticate` carries the multisite spam check. Core's
+	 * callbacks return early for a WP_User, so this method applies
+	 * `wp_authenticate_user` itself (with an empty password, as nothing was
+	 * typed) before `authenticate`. A WP_Error or a different user refuses.
+	 *
+	 * Run once when a login or a token is issued, and by the bearer filter on
+	 * every token request, so an account vetoed after issuance loses its
+	 * agents at once.
+	 */
+	public static function check_account( \WP_User $user ): ?\WP_Error {
+		/** This filter is documented in wp-includes/user.php */
+		$refusal = self::refusal( apply_filters( 'wp_authenticate_user', $user, '' ), $user ); // phpcs:ignore WordPress.NamingConventions.PrefixAllGlobals.NonPrefixedHooknameFound -- core filter, as wp_authenticate_username_password() applies it.
+		if ( null !== $refusal ) {
+			return $refusal;
+		}
+
+		/** This filter is documented in wp-includes/pluggable.php */
+		return self::refusal( apply_filters( 'authenticate', $user, $user->user_login, '' ), $user ); // phpcs:ignore WordPress.NamingConventions.PrefixAllGlobals.NonPrefixedHooknameFound -- core filter, as wp_authenticate() applies it.
 	}
 
 	/**

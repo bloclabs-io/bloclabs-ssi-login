@@ -2,6 +2,25 @@
 
 ## 0.4.0-dev (unreleased)
 
+- Agent login, bearer authentication and scope enforcement (#91, ADR 0007 follow-up 4/7). `Authorization: Bearer
+  bssi_…` authenticates a REST request over HTTPS as the token's user (plain HTTP only where
+  `wp_get_environment_type()` is `local`, as core allows for Application Passwords; the
+  `bloclabs_ssi_agent_token_requires_https` filter covers other closed stacks). WordPress determines the user at bootstrap,
+  before REST routing, so `determine_current_user` (priority 20, where Application Passwords sit) only reserves a
+  request that carries one of our tokens as nobody's, and the token is checked at the REST boundary, in
+  `rest_authentication_errors` (priority 90), before any route runs: an expired or revoked token, a missing user, a
+  plain-HTTP request, or an account that `wp_authenticate_user` or `authenticate` vetoes (applied on every request,
+  so a lockout, ban or multisite spam flag cuts an agent off at once) answer 401, never fall back to a cookie or to
+  anonymous, and fire `bloclabs_ssi_agent_token_refused` with the reason and the token's hash for lockout plugins.
+  Outside REST the token is never checked and the request stays anonymous, so wp-admin, wp-login.php, admin-ajax.php
+  and XML-RPC never see a token's user. A bearer value that is not ours is left to whatever plugin issued it; the
+  token is a header or nothing, never a query argument or a cookie; `last_used_at` is written at most once a minute.
+  `map_meta_cap` answers `do_not_allow` for every primitive capability outside the token's scope, for the denylist
+  and for the account's self-service meta capabilities (`edit_user`, `delete_user`, `promote_user` and the
+  Application Password ones), which confines a multisite super administrator too; `user_has_cap` intersects the
+  account's capabilities with the scope's, so a scope never grants what the account lacks and a demoted account's
+  agents are demoted with it. Routes tell a token request from a session with `BearerAuthentication::current()`.
+  Not registered until the tokens table (1/7) lands.
 - Agent login, token issuance (#90, ADR 0007 follow-up 3/7). The checks every verified attempt passes (the verifier's
   result against the on-chain commitments, the user against the `wp_authenticate`, `wp_authenticate_user`,
   `authenticate` and `bloclabs_ssi_allow_login` filters) move from `LoginFinalizer` into `LoginChecks`, shared with
