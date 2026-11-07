@@ -2,6 +2,10 @@
 
 ## 0.4.0-dev (unreleased)
 
+- Store agent attempt kind and requested scope, and add the hashed token table and repository with hourly
+  audit retention and uninstall cleanup (#88). The database migrates to version 6 because profile linking
+  already uses version 5; existing browser and profile-link attempts keep their defaults.
+
 ## 0.3.0 (2026-11-06)
 
 First release. The first end-to-end logins with a real phone wallet (Paradym on iOS) ran on 2026-11-06, same device

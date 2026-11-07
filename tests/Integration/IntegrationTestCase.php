@@ -264,5 +264,6 @@ abstract class IntegrationTestCase extends \WP_UnitTestCase {
 		global $wpdb;
 		$wpdb->query( 'DELETE FROM ' . Schema::attempts_table() ); // phpcs:ignore WordPress.DB.DirectDatabaseQuery,WordPress.DB.PreparedSQL.NotPrepared
 		$wpdb->query( 'DELETE FROM ' . Schema::identities_table() ); // phpcs:ignore WordPress.DB.DirectDatabaseQuery,WordPress.DB.PreparedSQL.NotPrepared
+		$wpdb->query( 'DELETE FROM ' . Schema::tokens_table() ); // phpcs:ignore WordPress.DB.DirectDatabaseQuery,WordPress.DB.PreparedSQL.NotPrepared
 	}
 }

@@ -68,9 +68,9 @@ final class InstallationTest extends IntegrationTestCase {
 				$this->assertStringContainsString( 'could not create', $e->getMessage() );
 			}
 			$this->assertFalse( get_option( Schema::VERSION_OPTION ) );
-			$this->assertSame( 2, $creates );
+			$this->assertSame( 3, $creates );
 			$this->assertFalse( Schema::maybe_upgrade() );
-			$this->assertSame( 2, $creates, 'a second request in the cooldown does not retry CREATE' );
+			$this->assertSame( 3, $creates, 'a second request in the cooldown does not retry CREATE' );
 		} finally {
 			remove_filter( 'query', $deny );
 			$wpdb->prefix = $prefix;

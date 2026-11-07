@@ -1,6 +1,6 @@
 <?php
 /**
- * The plugin's two tables.
+ * The plugin's attempts, identities and agent tokens tables.
  *
  * Login attempts are short-lived, written by anonymous visitors and updated by
  * webhooks, so they live in their own indexed table rather than in wp_options
@@ -15,7 +15,8 @@ namespace BlocLabs\SsiLogin\Database;
 
 final class Schema {
 
-	public const VERSION        = '5';
+	// Version 5 already added profile-link attempts (#81).
+	public const VERSION        = '6';
 	public const VERSION_OPTION = 'bloclabs_ssi_db_version';
 
 	public static function attempts_table(): string {
@@ -26,6 +27,11 @@ final class Schema {
 	public static function identities_table(): string {
 		global $wpdb;
 		return $wpdb->prefix . 'bloclabs_ssi_identities';
+	}
+
+	public static function tokens_table(): string {
+		global $wpdb;
+		return $wpdb->prefix . 'bloclabs_ssi_tokens';
 	}
 
 	/**
@@ -61,6 +67,7 @@ final class Schema {
 		$charset  = $wpdb->get_charset_collate();
 		$attempts = self::attempts_table();
 		$ids      = self::identities_table();
+		$tokens   = self::tokens_table();
 
 		// dbDelta is strict about formatting: one column per line, two spaces before the PRIMARY KEY definition.
 		dbDelta(
@@ -73,6 +80,8 @@ final class Schema {
   blinding_secret char(64) NOT NULL DEFAULT '',
   purpose varchar(16) NOT NULL DEFAULT 'login',
   link_user_id bigint(20) unsigned DEFAULT NULL,
+  kind varchar(16) NOT NULL DEFAULT 'browser',
+  requested_scope text,
   status varchar(16) NOT NULL DEFAULT 'pending',
   verifier_ref varchar(191) DEFAULT NULL,
   ip_hash char(64) DEFAULT NULL,
@@ -111,8 +120,35 @@ final class Schema {
 ) {$charset};"
 		);
 
-		// A failed CREATE must fail activation as well as leave the version unchanged.
-		if ( self::table_exists( $attempts ) && self::table_exists( $ids ) ) {
+		dbDelta(
+			"CREATE TABLE {$tokens} (
+  id bigint(20) unsigned NOT NULL AUTO_INCREMENT,
+  token_hash char(64) NOT NULL,
+  user_id bigint(20) unsigned NOT NULL,
+  delegated tinyint(1) unsigned NOT NULL DEFAULT 0,
+  agent_subject_hash char(64) NOT NULL,
+  agent_label varchar(191) NOT NULL,
+  issuer text,
+  scope text NOT NULL,
+  correlation_id char(64) NOT NULL,
+  tx_ref varchar(191) DEFAULT NULL,
+  firefly_event_id varchar(64) DEFAULT NULL,
+  created_at datetime NOT NULL,
+  expires_at datetime NOT NULL,
+  last_used_at datetime DEFAULT NULL,
+  revoked_at datetime DEFAULT NULL,
+  PRIMARY KEY  (id),
+  UNIQUE KEY token_hash (token_hash),
+  UNIQUE KEY correlation_id (correlation_id),
+  KEY user_id (user_id),
+  KEY expires_at (expires_at),
+  KEY revoked_at (revoked_at)
+) {$charset};"
+		);
+
+		// A failed CREATE or ALTER must leave the version unchanged so it can retry.
+		if ( self::table_exists( $attempts ) && self::table_exists( $ids ) && self::table_exists( $tokens )
+			&& self::column_exists( $attempts, 'kind' ) && self::column_exists( $attempts, 'requested_scope' ) ) {
 			update_option( self::VERSION_OPTION, self::VERSION, true );
 			delete_option( 'bloclabs_ssi_schema_retry_after' );
 		} else {
@@ -126,6 +162,11 @@ final class Schema {
 		return $table === $wpdb->get_var( $wpdb->prepare( 'SHOW TABLES LIKE %s', $wpdb->esc_like( $table ) ) ); // phpcs:ignore WordPress.DB.DirectDatabaseQuery
 	}
 
+	private static function column_exists( string $table, string $column ): bool {
+		global $wpdb;
+		return $column === $wpdb->get_var( $wpdb->prepare( 'SHOW COLUMNS FROM %i LIKE %s', $table, $wpdb->esc_like( $column ) ) ); // phpcs:ignore WordPress.DB.DirectDatabaseQuery
+	}
+
 	/**
 	 * Called from uninstall.php only.
 	 */
@@ -134,6 +175,7 @@ final class Schema {
 		// Table names come from $wpdb->prefix and constants, never from input.
 		$wpdb->query( 'DROP TABLE IF EXISTS ' . self::attempts_table() ); // phpcs:ignore WordPress.DB.DirectDatabaseQuery,WordPress.DB.PreparedSQL.NotPrepared
 		$wpdb->query( 'DROP TABLE IF EXISTS ' . self::identities_table() ); // phpcs:ignore WordPress.DB.DirectDatabaseQuery,WordPress.DB.PreparedSQL.NotPrepared
+		$wpdb->query( 'DROP TABLE IF EXISTS ' . self::tokens_table() ); // phpcs:ignore WordPress.DB.DirectDatabaseQuery,WordPress.DB.PreparedSQL.NotPrepared
 		delete_option( self::VERSION_OPTION );
 	}
 }

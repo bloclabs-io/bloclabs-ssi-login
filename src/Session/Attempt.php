@@ -37,13 +37,20 @@ final class Attempt {
 		public readonly ?int $checked_at,
 		public readonly string $purpose = 'login',
 		public readonly ?int $link_user_id = null,
+		public readonly string $kind = 'browser',
+		public readonly array $requested_scope = array(),
 	) {}
 
 	/**
 	 * @param array<string, mixed> $row A row from the attempts table.
 	 */
 	public static function from_row( array $row ): self {
-		$time = static fn ( $v ): ?int => null === $v ? null : (int) strtotime( $v . ' UTC' );
+		$time  = static fn ( $v ): ?int => null === $v ? null : (int) strtotime( $v . ' UTC' );
+		$scope = json_decode( (string) ( $row['requested_scope'] ?? '' ), true );
+		// Missing or malformed scope never grants anything to a future token issuer.
+		if ( ! is_array( $scope ) || ! array_is_list( $scope ) || count( array_filter( $scope, 'is_string' ) ) !== count( $scope ) ) {
+			$scope = array();
+		}
 
 		return new self(
 			(int) $row['id'],
@@ -62,6 +69,8 @@ final class Attempt {
 			$time( $row['checked_at'] ?? null ),
 			(string) ( $row['purpose'] ?? 'login' ),
 			isset( $row['link_user_id'] ) ? (int) $row['link_user_id'] : null,
+			(string) ( $row['kind'] ?? 'browser' ),
+			$scope,
 		);
 	}
 

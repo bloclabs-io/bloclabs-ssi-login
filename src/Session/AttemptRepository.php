@@ -21,9 +21,20 @@ final class AttemptRepository {
 
 	/**
 	 * Opens a new pending attempt with fresh random identifiers.
+	 *
+	 * @param list<string> $requested_scope Scope names requested by an agent; empty for browsers.
 	 */
-	public function open( string $binding_hash, ?string $ip_hash, int $ttl, ?string $redirect_to, string $purpose = 'login', ?int $link_user_id = null ): Attempt {
+	public function open( string $binding_hash, ?string $ip_hash, int $ttl, ?string $redirect_to, string $purpose = 'login', ?int $link_user_id = null, string $kind = 'browser', array $requested_scope = array() ): Attempt {
 		global $wpdb;
+
+		if ( ! in_array( $kind, array( 'browser', 'agent' ), true ) || ! array_is_list( $requested_scope )
+			|| count( array_filter( $requested_scope, 'is_string' ) ) !== count( $requested_scope ) ) {
+			throw new \InvalidArgumentException( 'Invalid attempt kind or requested scope.' );
+		}
+		$scope = wp_json_encode( $requested_scope );
+		if ( false === $scope ) {
+			throw new \InvalidArgumentException( 'Could not encode the requested scope.' );
+		}
 
 		$now = time();
 		$row = array(
@@ -36,6 +47,8 @@ final class AttemptRepository {
 			'status'          => AttemptStatus::Pending->value,
 			'purpose'         => $purpose,
 			'link_user_id'    => $link_user_id,
+			'kind'            => $kind,
+			'requested_scope' => $scope,
 			'ip_hash'         => $ip_hash,
 			'redirect_to'     => $redirect_to,
 			'created_at'      => gmdate( 'Y-m-d H:i:s', $now ),
