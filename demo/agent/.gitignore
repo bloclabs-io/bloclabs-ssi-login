@@ -1,0 +1,2 @@
+# The default AGENT_HOME when the client is run from this directory.
+.agent/

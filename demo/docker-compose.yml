@@ -246,6 +246,23 @@ services:
       - ./runtime:/runtime:ro
     networks: [demo]
 
+  # The reference agent client (demo/agent), run by ./agent.sh. Its key,
+  # credential and token live under runtime/agent. It reaches WordPress,
+  # the issuer and the verifier by their Compose names, never a host port.
+  agent:
+    profiles: ["agent"]
+    image: node:22.21.0-alpine
+    user: "0:0"
+    restart: "no"
+    environment:
+      AGENT_HOME: /runtime/agent
+      NO_COLOR: ${NO_COLOR:-}
+    volumes:
+      - ./agent:/opt/agent:ro
+      - ./runtime:/runtime
+    entrypoint: ["node", "/opt/agent/agent.mjs"]
+    networks: [demo]
+
   issuer:
     image: waltid/issuer-api2:1.2.0
     restart: unless-stopped

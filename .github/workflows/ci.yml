@@ -114,4 +114,15 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
-      - run: node --test demo/bin/owner-key.test.mjs demo/bin/ports.test.mjs
+      - run: node --test demo/bin/owner-key.test.mjs demo/bin/ports.test.mjs demo/bin/agent-offer.test.mjs
+
+  agent:
+    name: Reference agent client
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - run: npm test
+        working-directory: demo/agent

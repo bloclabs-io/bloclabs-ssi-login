@@ -11,6 +11,10 @@ declare(strict_types=1);
 
 defined( 'ABSPATH' ) || exit;
 
+if ( defined( 'WP_CLI' ) && WP_CLI ) {
+	require_once __DIR__ . '/bloclabs-demo/cli.php';
+}
+
 /**
  * Styles shared by the login screen and the demo front page.
  */

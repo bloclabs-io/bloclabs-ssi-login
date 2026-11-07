@@ -1,7 +1,8 @@
 /**
  * After the stack is up: deploy the attestor and the trusted-issuer registry
- * when this FireFly does not already have them, trust the generated issuer,
- * then ask the issuer for a fresh credential offer.
+ * when this FireFly does not already have them, trust the generated issuer
+ * for the member and the agent credential types, then ask the issuer for a
+ * fresh credential offer.
  *
  * Talks to FireFly and the issuer by their Compose names. Run it with
  * `docker compose run` on the demo network, not from the host.
@@ -69,6 +70,10 @@ function ns(path) {
 }
 
 const MEMBER_VCT = 'http://issuer.demo/openid4vci/member';
+const AGENT_VCT = 'http://issuer.demo/openid4vci/agent';
+
+/** The (issuer, vct) pairs the registry trusts: the browser login's credential and the agent's. */
+export const TRUSTED_TYPES = [MEMBER_VCT, AGENT_VCT];
 
 /** JSON-RPC of the registry-owner signer. The bridge is not on its network. */
 export const OWNER_SIGNER_URL = (process.env.OWNER_SIGNER_URL || 'http://owner-signer:8545').replace(/\/$/, '');
@@ -343,11 +348,13 @@ async function registry(plan, did) {
 		}
 		address = (await publishApi('trusted-issuer-registry', 'TrustedIssuerRegistry', address)).address;
 	}
-	await ownerTransaction({
-		from: plan.registry.key,
-		to: address,
-		data: setIssuerCalldata(did, MEMBER_VCT),
-	});
+	for (const vct of TRUSTED_TYPES) {
+		await ownerTransaction({
+			from: plan.registry.key,
+			to: address,
+			data: setIssuerCalldata(did, vct),
+		});
+	}
 	process.stdout.write(`registry ${address}\n`);
 	return address;
 }
