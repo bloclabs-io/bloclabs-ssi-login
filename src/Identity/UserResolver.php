@@ -11,6 +11,10 @@
  * is trusted to have verified that address, it hands accounts to whoever can
  * get a credential saying so.
  *
+ * An agent (resolve_agent()) never gets an account made for it: it acts as
+ * the account its credential's `acts_for` names, if that account opted in,
+ * or as the one its own key is linked to.
+ *
  * @package BlocLabs\SsiLogin
  */
 
@@ -19,7 +23,7 @@ declare(strict_types=1);
 namespace BlocLabs\SsiLogin\Identity;
 
 use BlocLabs\SsiLogin\Config\Settings;
-use BlocLabs\SsiLogin\Login\LoginFinalizer;
+use BlocLabs\SsiLogin\Login\LoginChecks;
 use BlocLabs\SsiLogin\Verifier\PresentationResult;
 
 final class UserResolver {
@@ -49,13 +53,7 @@ final class UserResolver {
 	 */
 	public function resolve( PresentationResult $result ) {
 		$hash    = $this->subject_hash( $result->subject_id );
-		$user_id = $this->identities->user_id_for( $hash );
-
-		// A link to a deleted user is no link: drop it, so the subject can be linked or provisioned again.
-		if ( null !== $user_id && ! get_userdata( $user_id ) instanceof \WP_User ) {
-			$this->identities->unlink_user( $user_id );
-			$user_id = null;
-		}
+		$user_id = $this->linked_user( $hash )?->ID;
 
 		if ( null === $user_id && Settings::AUTO_PROVISION === $this->settings->string( 'linking_policy' ) ) {
 			$user_id = $this->provision( $result, $hash );
@@ -83,6 +81,55 @@ final class UserResolver {
 		}
 
 		$this->identities->touch( $hash );
+		return $user;
+	}
+
+	/**
+	 * Which account an agent's token acts as (ADR 0007 §3, step 4).
+	 *
+	 * With `acts_for`, the account linked to the principal's subject id, and
+	 * only if that account lets agents act for it. Without, the account the
+	 * agent's own key is linked to. Nothing is ever provisioned, whatever the
+	 * linking policy says: bots do not self-register. The `bloclabs_ssi_resolve_user`
+	 * filter does not run here; it chooses accounts for people, and a site vetoes
+	 * agents through `bloclabs_ssi_allow_login` and `bloclabs_ssi_agent_token`.
+	 *
+	 * @return AgentAccount|null Null when no account here takes a token for this credential:
+	 *                           not linked, or the principal has not opted in.
+	 */
+	public function resolve_agent( PresentationResult $result ): ?AgentAccount {
+		$acts_for = AgentCredential::acts_for( $result );
+		if ( null !== $acts_for ) {
+			$principal = $this->linked_user( $this->subject_hash( $acts_for ) );
+			if ( null === $principal || ! AgentDelegation::allowed( $principal->ID ) ) {
+				return null;
+			}
+			return new AgentAccount( $principal, true );
+		}
+
+		$hash = $this->subject_hash( $result->subject_id );
+		$user = $this->linked_user( $hash );
+		if ( null === $user ) {
+			return null;
+		}
+		$this->identities->touch( $hash );
+		return new AgentAccount( $user, false );
+	}
+
+	/**
+	 * The account a subject hash is linked to. A link to a deleted user is no
+	 * link: it is dropped, so the subject can be linked or provisioned again.
+	 */
+	private function linked_user( string $hash ): ?\WP_User {
+		$user_id = $this->identities->user_id_for( $hash );
+		if ( null === $user_id ) {
+			return null;
+		}
+		$user = get_userdata( $user_id );
+		if ( ! $user instanceof \WP_User ) {
+			$this->identities->unlink_user( $user_id );
+			return null;
+		}
 		return $user;
 	}
 
@@ -284,6 +331,6 @@ final class UserResolver {
 	}
 
 	private static function retry(): \WP_Error {
-		return new \WP_Error( LoginFinalizer::RETRY, __( 'Still setting up your account…', 'bloclabs-ssi-login' ), array( 'status' => 503 ) );
+		return new \WP_Error( LoginChecks::RETRY, __( 'Still setting up your account…', 'bloclabs-ssi-login' ), array( 'status' => 503 ) );
 	}
 }

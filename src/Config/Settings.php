@@ -28,6 +28,10 @@ final class Settings {
 	public const LINK_ONLY      = 'link_only';
 	public const AUTO_PROVISION = 'auto_provision';
 
+	/** Bounds of `agent_token_ttl`: five minutes to a day. */
+	public const AGENT_TOKEN_TTL_MIN = 300;
+	public const AGENT_TOKEN_TTL_MAX = 86400;
+
 	/** @var array<string, mixed>|null */
 	private ?array $stored = null;
 
@@ -38,39 +42,47 @@ final class Settings {
 	 */
 	public static function defaults(): array {
 		return array(
-			'enabled'              => false,
+			'enabled'                => false,
 			// FireFly core, as WordPress reaches it (an internal address is best: FireFly's API has no auth of its own).
-			'firefly_url'          => 'http://127.0.0.1:5000',
-			'firefly_namespace'    => 'default',
-			'firefly_auth_header'  => '',
+			'firefly_url'            => 'http://127.0.0.1:5000',
+			'firefly_namespace'      => 'default',
+			'firefly_auth_header'    => '',
 			// The contract listener that watches the attestor contract's LoginAttested event.
-			'firefly_listener_id'  => '',
-			'attestor_address'     => '',
-			'attestation_event'    => 'LoginAttested',
-			'event_mode'           => self::EVENT_MODE_WEBHOOK,
-			'webhook_secret'       => '',
-			'webhook_allowed_ips'  => '',
+			'firefly_listener_id'    => '',
+			'attestor_address'       => '',
+			'attestation_event'      => 'LoginAttested',
+			'event_mode'             => self::EVENT_MODE_WEBHOOK,
+			'webhook_secret'         => '',
+			'webhook_allowed_ips'    => '',
 			// Seconds before a pending attempt in webhook mode starts polling FireFly as a fallback.
-			'poll_fallback_after'  => 15,
-			'verifier_url'         => 'http://127.0.0.1:8090',
-			'verifier_auth_header' => '',
+			'poll_fallback_after'    => 15,
+			'verifier_url'           => 'http://127.0.0.1:8090',
+			'verifier_auth_header'   => '',
 			// A named credential query the verifier knows (DCQL lives in the verifier, not in WordPress).
-			'credential_query'     => 'default',
-			'attempt_ttl'          => 180,
+			'credential_query'       => 'default',
+			'attempt_ttl'            => 180,
 			// Login attempts one client may open per 10 minutes, whatever became of them.
 			// A client is an IPv4 address or an IPv6 /64.
-			'max_pending_per_ip'   => 10,
+			'max_pending_per_ip'     => 10,
 			// Login attempts all clients together may open per 10 minutes: the verifier and the table see no more.
-			'max_pending_total'    => 500,
+			'max_pending_total'      => 500,
 			// $_SERVER key holding the visitor IP behind a trusted proxy, e.g. HTTP_CF_CONNECTING_IP or
 			// HTTP_X_FORWARDED_FOR. Empty: REMOTE_ADDR. Only set it when the origin is unreachable except
 			// through that proxy; otherwise the header is spoofable.
-			'client_ip_header'     => '',
+			'client_ip_header'       => '',
 			// Trusted proxies that append their peer to that header: the client is this many entries from
 			// the right. The left-most entry is whatever the sender wrote.
-			'client_ip_proxies'    => 1,
-			'linking_policy'       => self::LINK_ONLY,
-			'default_role'         => 'subscriber',
+			'client_ip_proxies'      => 1,
+			'linking_policy'         => self::LINK_ONLY,
+			'default_role'           => 'subscriber',
+			// Agent login (ADR 0007): off by default. The agent routes and the bearer filter exist only when it is on.
+			'agent_login_enabled'    => false,
+			// The bridge query for agent credentials, pinned to the agent credential type.
+			'agent_credential_query' => 'agent',
+			// Seconds an application token lives, clamped to 5 minutes – 1 day; the credential's own expiry can shorten it.
+			'agent_token_ttl'        => 3600,
+			// Scope names the site allows at all, comma separated (see Login\Scope).
+			'agent_scopes'           => 'read,content',
 		);
 	}
 
@@ -106,6 +118,21 @@ final class Settings {
 
 	public function enabled(): bool {
 		return $this->bool( 'enabled' );
+	}
+
+	/**
+	 * Agent login needs credential login on as well: the bridge, FireFly and
+	 * the linking policy it relies on are the same.
+	 */
+	public function agent_login_enabled(): bool {
+		return $this->enabled() && $this->bool( 'agent_login_enabled' );
+	}
+
+	/**
+	 * Seconds an application token lives, within the bounds ADR 0007 sets.
+	 */
+	public function agent_token_ttl(): int {
+		return max( self::AGENT_TOKEN_TTL_MIN, min( self::AGENT_TOKEN_TTL_MAX, $this->int( 'agent_token_ttl' ) ) );
 	}
 
 	public function is_pinned( string $key ): bool {
