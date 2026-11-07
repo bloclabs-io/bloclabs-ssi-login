@@ -10,6 +10,9 @@ and cross device, including linking a credential to an existing account. Not ext
 
 - Offer the existing SSI login block on WooCommerce My Account and checkout login forms, returning to the Woo page after login (#98).
 
+- AGENTS.md: a "blocLabs look and feel" section with the brand tokens measured on bloclabs.io (colours, fonts, shapes,
+  contrast rules) for anything blocLabs-branded; the plugin's own UI keeps following the site theme. The official
+  logo files are in docs/brand/.
 - Same-device login through the browser's Digital Credentials API (#76). With `BRIDGE_DC_API_ORIGINS` and
   `VERIFIER_PUBLIC_URL` set, the bridge opens a second walt.id session (`dc_api_openid4vp`, bound to the login
   pages' origins) next to the QR code's and returns it as `dc_api`: the `requests` for `navigator.credentials.get`
