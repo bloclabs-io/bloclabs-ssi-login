@@ -8,6 +8,7 @@ would embed, written plainly enough to read in one sitting: Node 22, no dependen
 ```text
 agent.mjs keygen                      make the agent's key (once)
 agent.mjs receive <offer>             take the agent credential from an issuer (OpenID4VCI)
+agent.mjs check <site>                does this site have the agent routes? (no attempt is opened)
 agent.mjs login <site> [--scope …]    present it (OpenID4VP), get a token
 agent.mjs call <path> [--method …]    call the REST API with the token
 agent.mjs logout                      revoke the token

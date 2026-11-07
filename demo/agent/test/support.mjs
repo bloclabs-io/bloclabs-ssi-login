@@ -387,6 +387,10 @@ export async function startWordPress(verifier, options = {}) {
 		if (url.pathname.startsWith('/wp-json/bloclabs-ssi/v1/agent/') && agentLoginOff) {
 			return wpError(404, 'rest_no_route', 'No route was found matching the URL and request method.');
 		}
+		if (req.method === 'OPTIONS' && url.pathname === '/wp-json/bloclabs-ssi/v1/agent/initiate') {
+			// What WP_REST_Server answers for OPTIONS on a registered route.
+			return send(res, 200, { namespace: 'bloclabs-ssi/v1', methods: ['POST'], endpoints: [{ methods: ['POST'], args: { scope: { required: false } } }] });
+		}
 		if (req.method === 'POST' && url.pathname === '/wp-json/bloclabs-ssi/v1/agent/initiate') {
 			const body = JSON.parse((await readBody(req)) || '{}');
 			const requested = Array.isArray(body.scope) && body.scope.length > 0 ? body.scope : ['read'];

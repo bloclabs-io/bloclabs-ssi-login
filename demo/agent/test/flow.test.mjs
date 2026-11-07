@@ -91,6 +91,23 @@ test('with agent login off, WordPress has no agent routes, and the agent says so
 	const wordpress = await startWordPress(verifier, { agentLoginOff: true });
 	try {
 		await assert.rejects(login({ site: wordpress.url, scope: ['read'], key, credential: credentialFor(), log: quiet, sleep: noSleep }), (error) => error.code === 'agent_login_off' && /agent login is off/.test(error.message));
+		await assert.rejects(new SiteClient(wordpress.url).check(), (error) => error.code === 'agent_login_off' && /older than ADR 0007/.test(error.message));
+		assert.ok(wordpress.state.calls.every((c) => c.method !== 'POST' || c.path.endsWith('/agent/initiate')), 'check opened nothing');
+	} finally {
+		await wordpress.close();
+		await verifier.close();
+	}
+});
+
+test('check sees the agent routes without opening an attempt', async () => {
+	const verifier = await startVerifier();
+	const wordpress = await startWordPress(verifier);
+	try {
+		const found = await new SiteClient(wordpress.url).check();
+		assert.equal(found.site, wordpress.url);
+		assert.deepEqual(found.methods, ['POST']);
+		assert.deepEqual(wordpress.state.calls.map((c) => c.method), ['OPTIONS']);
+		assert.equal(wordpress.state.attempts.size, 0);
 	} finally {
 		await wordpress.close();
 		await verifier.close();

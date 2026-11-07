@@ -67,6 +67,18 @@ say() {
 	printf '\n%s\n' "$1"
 }
 
+say "Does this WordPress have the agent routes? (OPTIONS agent/initiate, nothing is opened)"
+if ! agent check http://wordpress; then
+	cat >&2 <<'EOF'
+
+The plugin mounted in this stack has no agent routes, so the agent login cannot run here.
+Agent login needs ADR 0007 parts 2 to 4 (schema 5, the agent routes, token issuance and
+bearer authentication) in the plugin, and BLOCLABS_SSI_AGENT_LOGIN_ENABLED on, which
+./setup.sh sets. Nothing was issued or linked.
+EOF
+	exit 1
+fi
+
 say "Requesting an agent credential offer from the issuer${acts_for:+ (acting for ${acts_for})}..."
 docker compose run --rm --no-deps -e "ACTS_FOR=${acts_for}" --entrypoint node keys /opt/demo/agent-offer.mjs
 offer="$(tr -d '\r\n' < runtime/agent-offer.url)"

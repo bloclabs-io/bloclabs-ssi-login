@@ -33,6 +33,33 @@ export class SiteClient {
 	}
 
 	/**
+	 * Whether this site has the agent routes at all: `OPTIONS` on the initiate
+	 * route, which WordPress answers with the route's description when it is
+	 * registered and with 404 `rest_no_route` when it is not. No attempt is
+	 * opened and nothing is counted against the caps. Throws `agent_login_off`
+	 * when the routes are missing: agent login is off, or the plugin predates
+	 * ADR 0007 parts 2 to 4.
+	 *
+	 * @returns {Promise<{site: string, methods: string[]}>}
+	 */
+	async check() {
+		const answer = await request(this.route(`${NAMESPACE}/agent/initiate`), {
+			method: 'OPTIONS',
+			headers: { accept: 'application/json' },
+			fetchImpl: this.fetchImpl,
+			who: 'WordPress',
+		});
+		if (answer.status === 404) {
+			throw new AgentError(`${this.site} has no agent routes: agent login is off, or the plugin is older than ADR 0007 parts 2 to 4 (schema, agent routes, token issuance and bearer authentication)`, 'agent_login_off');
+		}
+		if (answer.status < 200 || answer.status >= 300) {
+			throw new AgentError(`WordPress did not describe the agent routes: ${restError(answer)}`, 'check_failed');
+		}
+		const methods = isRecord(answer.json) && Array.isArray(answer.json.methods) ? answer.json.methods.filter((m) => typeof m === 'string') : [];
+		return { site: this.site, methods };
+	}
+
+	/**
 	 * `POST /agent/initiate`.
 	 *
 	 * @param {string[]} scope

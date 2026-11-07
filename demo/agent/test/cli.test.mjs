@@ -66,6 +66,10 @@ test('the CLI takes an agent from no key to a revoked token, with its state in A
 		assert.deepEqual(held.credential.claims.scope, ['read', 'content']);
 		assert.equal(held.subject_id, me.did, 'the subject id is the did:jwk the credential was bound to');
 
+		r = await run(['check', wordpress.url], env);
+		assert.equal(r.code, 0, r.stderr);
+		assert.match(r.stdout, /has the agent routes \(POST\)/);
+
 		r = await run(['login', wordpress.url, '--scope', 'read,content', '--json'], env);
 		assert.equal(r.code, 0, r.stderr);
 		const token = JSON.parse(r.stdout);
@@ -127,6 +131,17 @@ test('usage errors exit 2 and name the problem; help exits 0', async () => {
 		r = await run(['receive', 'not-an-offer'], { AGENT_HOME: home });
 		assert.equal(r.code, 1);
 		assert.match(r.stderr, /neither a URL nor JSON \[malformed\]/);
+
+		const verifier = await startVerifier();
+		const off = await startWordPress(verifier, { agentLoginOff: true });
+		try {
+			r = await run(['check', off.url], { AGENT_HOME: home });
+			assert.equal(r.code, 1);
+			assert.match(r.stderr, /has no agent routes: agent login is off, or the plugin is older than ADR 0007 .* \[agent_login_off\]/);
+		} finally {
+			await off.close();
+			await verifier.close();
+		}
 	} finally {
 		rmSync(home, { recursive: true, force: true });
 	}

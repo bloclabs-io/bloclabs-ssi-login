@@ -6,6 +6,7 @@
  *
  *   agent.mjs keygen                      make the agent's key (once)
  *   agent.mjs receive <offer>             take the agent credential from an issuer
+ *   agent.mjs check <site>                does this site have the agent routes?
  *   agent.mjs login <site> [--scope …]    present it, get a token
  *   agent.mjs call <path> [--method …]    call the REST API with the token
  *   agent.mjs logout                      revoke the token
@@ -28,6 +29,7 @@ import { SiteClient, restError } from './lib/wordpress.mjs';
 const USAGE = `Usage:
   agent.mjs keygen
   agent.mjs receive <credential offer> [--tx-code <code>] [--proof-key did|jwk]
+  agent.mjs check <site URL>
   agent.mjs login <site URL> [--scope read,content] [--verifier <client id>] [--vp-token-form array|string] [--show-token]
   agent.mjs call <path under /wp-json/> [--method GET|POST|…] [--data <JSON>]
   agent.mjs logout
@@ -155,6 +157,17 @@ export async function main(argv, env = process.env, io = { stdout: process.stdou
 			say(keyValue(p, 'claims', JSON.stringify(me.credential?.claims ?? {})));
 			if (values.json) {
 				emit(me);
+			}
+			return 0;
+		}
+		case 'check': {
+			if (rest.length !== 1) {
+				throw new AgentError('check takes the site URL as its one argument', 'usage');
+			}
+			const found = await new SiteClient(rest[0]).check();
+			log(`${found.site} has the agent routes${found.methods.length === 0 ? '' : ` (${found.methods.join(', ')})`}`);
+			if (values.json) {
+				emit({ site: found.site, agent_routes: true, methods: found.methods });
 			}
 			return 0;
 		}
