@@ -35,8 +35,10 @@ final class UninstallTest extends IntegrationTestCase {
 
 		$attempts   = Schema::attempts_table();
 		$identities = Schema::identities_table();
+		$tokens     = Schema::tokens_table();
 		$this->assertNull( $wpdb->get_var( $wpdb->prepare( 'SHOW TABLES LIKE %s', $wpdb->esc_like( $attempts ) ) ) ); // phpcs:ignore WordPress.DB.DirectDatabaseQuery
 		$this->assertNull( $wpdb->get_var( $wpdb->prepare( 'SHOW TABLES LIKE %s', $wpdb->esc_like( $identities ) ) ) ); // phpcs:ignore WordPress.DB.DirectDatabaseQuery
+		$this->assertNull( $wpdb->get_var( $wpdb->prepare( 'SHOW TABLES LIKE %s', $wpdb->esc_like( $tokens ) ) ) ); // phpcs:ignore WordPress.DB.DirectDatabaseQuery
 		$this->assertFalse( get_option( Schema::VERSION_OPTION ) );
 		$this->assertFalse( get_option( Settings::OPTION ) );
 		$this->assertFalse( get_option( Settings::SUBJECT_KEY_OPTION ) );

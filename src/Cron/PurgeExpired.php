@@ -1,6 +1,6 @@
 <?php
 /**
- * Hourly housekeeping: expire stale attempts, delete attempts older than a day.
+ * Hourly housekeeping for attempts and the agent token audit trail.
  *
  * @package BlocLabs\SsiLogin
  */
@@ -10,6 +10,7 @@ declare(strict_types=1);
 namespace BlocLabs\SsiLogin\Cron;
 
 use BlocLabs\SsiLogin\Session\AttemptRepository;
+use BlocLabs\SsiLogin\Session\TokenRepository;
 
 final class PurgeExpired {
 
@@ -17,14 +18,18 @@ final class PurgeExpired {
 
 	private const KEEP = DAY_IN_SECONDS;
 
-	public function __construct( private readonly AttemptRepository $attempts ) {}
+	public function __construct(
+		private readonly AttemptRepository $attempts,
+		private readonly TokenRepository $tokens = new TokenRepository(),
+	) {}
 
 	public function register(): void {
 		add_action( self::HOOK, array( $this, 'run' ) );
 	}
 
 	public function run(): int {
-		return $this->attempts->purge( (int) apply_filters( 'bloclabs_ssi_attempt_retention', self::KEEP ) );
+		$deleted = $this->attempts->purge( (int) apply_filters( 'bloclabs_ssi_attempt_retention', self::KEEP ) );
+		return $deleted + $this->tokens->purge( (int) apply_filters( 'bloclabs_ssi_token_retention', 30 * DAY_IN_SECONDS ) );
 	}
 
 	public static function schedule(): void {
