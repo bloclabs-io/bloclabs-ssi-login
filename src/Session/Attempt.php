@@ -35,6 +35,8 @@ final class Attempt {
 		public readonly int $created_at,
 		public readonly int $expires_at,
 		public readonly ?int $checked_at,
+		public readonly string $purpose = 'login',
+		public readonly ?int $link_user_id = null,
 	) {}
 
 	/**
@@ -58,6 +60,8 @@ final class Attempt {
 			(int) $time( $row['created_at'] ),
 			(int) $time( $row['expires_at'] ),
 			$time( $row['checked_at'] ?? null ),
+			(string) ( $row['purpose'] ?? 'login' ),
+			isset( $row['link_user_id'] ) ? (int) $row['link_user_id'] : null,
 		);
 	}
 

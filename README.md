@@ -8,9 +8,10 @@ A verifier checks it and records its decision on a blockchain through
 [Hyperledger FireFly](https://hyperledger-firefly.github.io/firefly/latest/). FireFly streams that record to
 WordPress, which logs the visitor in. The chain holds commitments only, never claims or identifiers.
 
-> **Status: pre-alpha (0.1.0-dev).** The plugin framework, the attestor contract, the FireFly event path and the
-> reference verifier bridge ([`bridge/`](bridge/), on walt.id verifier-api2) are built and unit-tested. A login has
-> not been exercised end to end with a real wallet yet, so treat the whole as unreleased. See [Roadmap](#roadmap).
+> **Status: 0.3.0, first release (2026-11-06).** The plugin, the attestor and trusted-issuer registry contracts, the
+> FireFly event path and the reference verifier bridge ([`bridge/`](bridge/), on walt.id verifier-api2) are built and
+> tested, and real phone-wallet logins (Paradym on iOS, same device and cross device) have run end to end. It has not
+> had an external security review yet (milestone 1.0). See [Roadmap](#roadmap).
 
 ```mermaid
 flowchart LR
@@ -37,7 +38,9 @@ flowchart LR
 
 1. The login page calls `POST /wp-json/bloclabs-ssi/v1/initiate`. WordPress opens an attempt bound to the browser
    by an HttpOnly cookie and asks the verifier bridge for a presentation request.
-2. The browser shows the `openid4vp://` request as a QR code and a same-device link.
+2. The browser asks the wallet through the [Digital Credentials API](https://www.w3.org/TR/digital-credentials/)
+   where it has it and the bridge offers that path, and otherwise shows the `openid4vp://` request as a QR code
+   and a same-device link.
 3. The wallet presents to the verifier. The verifier checks signatures, holder binding, issuer trust and
    revocation, then calls `attest(correlationId, result, subjectCommitment, presentationHash)` through FireFly.
 4. FireFly's contract listener picks up `LoginAttested` and its webhook subscription notifies WordPress.
@@ -88,12 +91,15 @@ Without PHP locally: `docker run --rm -v "$PWD:/app" -w /app composer:2 sh -c "c
 
 ## Roadmap
 
-- **0.1** Plugin framework, attestor contract, FireFly event path, unit tests (this release).
+- **0.1** Plugin framework, attestor contract, FireFly event path, unit tests (done).
 - **0.2** Reference verifier bridge on [walt.id verifier-api2](https://github.com/walt-id/waltid-identity)
-  (built: [`bridge/`](bridge/)), and a one-command Docker demo (WordPress, FireFly, Besu, verifier) (open).
-- **0.3** "Link a credential" on the profile screen; same-device login through the browser's
-  [Digital Credentials API](https://www.w3.org/TR/digital-credentials/).
-- **0.4** On-chain trusted-issuer registry; agent login that issues an application token instead of a cookie.
+  (done: [`bridge/`](bridge/)); a one-command Docker demo (WordPress, FireFly, Besu, verifier) (open).
+- **0.3** (this release) "Link a credential" on the profile screen (done); same-device login through the browser's
+  [Digital Credentials API](https://www.w3.org/TR/digital-credentials/) (built, off unless configured); signed
+  requests for phone wallets (done); on-chain trusted-issuer registry, brought forward from 0.4 (done);
+  integration tests on `wp-env` (done).
+- **0.4** Agent login that issues an application token instead of a cookie
+  ([ADR 0007](docs/adr/0007-agent-login.md), in progress).
 - **1.0** External security review, WordPress.org listing (founder decision).
 
 ## Security

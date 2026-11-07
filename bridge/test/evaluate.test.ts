@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 
 import { presentationHash } from '../src/crypto.js';
-import { buildSessionSetup, evaluateSession, holderSubjectId, projectClaimPath, selectClaims } from '../src/verifier.js';
+import { buildDcApiSessionSetup, buildSessionSetup, evaluateSession, holderSubjectId, projectClaimPath, selectClaims } from '../src/verifier.js';
 import { credentialData, failedSession, HOLDER_JWK, PRESENTATION_HASH_VECTOR, QUERIES, SD_JWT_PRESENTATION, successfulSession } from './helpers.js';
 
 const query = QUERIES.default;
@@ -28,6 +28,31 @@ describe('session setup', () => {
         policies: query.policies,
       },
     });
+  });
+
+  it('asks walt.id for a Digital Credentials API session bound to the login pages\' origins', () => {
+    const setup = buildDcApiSessionSetup({
+      id: 'dc1',
+      query,
+      expiresAt: new Date('2026-11-03T12:03:00Z'),
+      retainUntil: new Date('2026-11-03T12:04:00Z'),
+      webhookUrl: 'http://bridge:8090/v1/verifier-callbacks/dc1',
+      webhookToken: 'tok',
+      origins: ['https://site.example', 'https://wp.example:8443'],
+    });
+    assert.deepEqual(setup, {
+      flow_type: 'dc_api_openid4vp',
+      core_flow: {
+        sessionId: 'dc1',
+        dcql_query: query.dcql_query,
+        expiration_date: '2026-11-03T12:03:00.000Z',
+        retention_date: '2026-11-03T12:04:00.000Z',
+        notifications: { webhook: { url: 'http://bridge:8090/v1/verifier-callbacks/dc1', bearer_token: 'tok' } },
+        policies: query.policies,
+      },
+      expectedOrigins: ['https://site.example', 'https://wp.example:8443'],
+    });
+    assert.equal(Object.hasOwn(setup, 'url_config'), false, 'no response URI: the browser carries the answer');
   });
 });
 

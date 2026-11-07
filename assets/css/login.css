@@ -87,3 +87,13 @@
 .bloclabs-ssi [hidden] {
 	display: none !important;
 }
+
+/* Front-end themes may style only submit buttons; give this type=button the form's typography. */
+.woocommerce .bloclabs-ssi__start {
+	font: inherit;
+	padding: 0.6em 1em;
+	min-height: 44px;
+	border-style: solid;
+	border-width: 1px;
+	cursor: pointer;
+}

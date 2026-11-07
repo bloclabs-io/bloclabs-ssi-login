@@ -25,6 +25,9 @@ services:
       # How the verifier reaches the bridge; the request id is appended per session.
       BRIDGE_CALLBACK_URL: "http://bridge:8090/v1/verifier-callbacks"
       VERIFIER_URL: "http://verifier:7004"
+      # Unsigned mode (default). For phone wallets, generate the signed config as in README,
+      # set this to "true", and uncomment the single-file mount below.
+      VERIFIER_SIGNED_REQUEST: "false"
       FIREFLY_URL: "http://<firefly-core-host>:5000"
       FIREFLY_NAMESPACE: "default"
       FIREFLY_API_NAME: "ssi-login-attestor"
@@ -35,6 +38,11 @@ services:
       # type must be trusted on chain; the attempt fails closed when the registry cannot answer.
       # FIREFLY_REGISTRY_API: "trusted-issuer-registry"
       BRIDGE_LOG_LEVEL: "info"
+      # Same-device login through the browser's Digital Credentials API: the origin of every
+      # login page (scheme, host and port, no path) and the verifier as browsers reach it.
+      # Leave both out to offer the QR code and wallet link only.
+      # BRIDGE_DC_API_ORIGINS: "https://<wordpress-host>"
+      # VERIFIER_PUBLIC_URL: "https://<verifier-public-host>"
       # Named queries. `default` is what the plugin asks for unless its `credential_query`
       # setting says otherwise: one SD-JWT VC with cryptographic holder binding (the DCQL
       # default), signed by a listed issuer, in its validity period.
@@ -75,6 +83,8 @@ services:
     restart: unless-stopped
     volumes:
       - ./verifier:/waltid-verifier-api2/config:ro
+      # Signed mode: generated with --mode x509_san_dns (or x509_hash), kept outside git.
+      # - ./verifier/private/verifier-service.conf:/waltid-verifier-api2/config/verifier-service.conf:ro
     ports:
       # Bind to the host loopback and publish through a TLS reverse proxy as https://<verifier-public-host>.
       - "127.0.0.1:7004:7004"

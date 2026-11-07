@@ -1,8 +1,25 @@
 # Changelog
 
-## 0.1.0-dev (unreleased)
+## 0.4.0-dev (unreleased)
 
 - `npm run test:wp-env` runs the WordPress integration suite in wp-env (the WordPress 6.6.10 release zip on PHP 8.3, single site and multisite). The first start downloads that zip instead of cloning the WordPress git repository. Pull requests run that job as well as the existing MySQL integration jobs (#68).
+
+## 0.3.0 (2026-11-06)
+
+First release. The first end-to-end logins with a real phone wallet (Paradym on iOS) ran on 2026-11-06, same device
+and cross device, including linking a credential to an existing account. Not externally reviewed yet (milestone 1.0).
+
+
+- Offer the existing SSI login block on WooCommerce My Account and checkout login forms, returning to the Woo page after login (#98).
+
+- Same-device login through the browser's Digital Credentials API (#76). With `BRIDGE_DC_API_ORIGINS` and
+  `VERIFIER_PUBLIC_URL` set, the bridge opens a second walt.id session (`dc_api_openid4vp`, bound to the login
+  pages' origins) next to the QR code's and returns it as `dc_api`: the `requests` for `navigator.credentials.get`
+  and the verifier's `response_url`. Where the browser has the API, the login page asks the wallet through it on
+  the click, posts the answer to the verifier without cookies, and falls back to the QR code and wallet link when
+  the prompt is dismissed, unsupported or undeliverable; whichever session answers first is attested once under
+  the attempt's correlation id. Without the setting or the API nothing changes. docs/BRIDGE-API.md defines the
+  field.
 - Auto-provisioned accounts take their display, first and last name from the disclosed `given_name` and `family_name` when the credential has no `name` claim, as SD-JWT VC identity credentials usually don't; the display name still falls back to the login, and the e-mail claim is still never used (#56).
 - ADR 0006: issuer trust moves from the bridge's walt.id `allowed-issuer` policy to an owner-governed on-chain
   `TrustedIssuerRegistry` of `(issuer, vct)` pairs, which the bridge queries through FireFly before it attests, with
@@ -21,6 +38,8 @@
   border colours, pinned as one set, so a theme or login customiser that recolours links or buttons cannot leave the
   text unreadable; a theme recolours them through the `--bloclabs-ssi-button-*` custom properties. The focus ring
   stays visible on any page background (#55).
+- Support signed walt.id authorization requests with `x509_san_dns` or `x509_hash` client identities, private PEM-to-config setup and a self-signed certificate smoke test that uses the default Docker host/context, including Docker Desktop (#72).
+- Link and unlink credentials from your own profile using account- and browser-bound, single-use verified attempts (#70).
 - Add the owner-governed TrustedIssuerRegistry for exact issuer/vct pairs, two-step ownership, executable contract tests in CI and FireFly setup instructions (#71).
 
 - Handoff labels use live PR draft/state data and an Actions-bot head checkpoint so replaced push jobs and delayed old handoffs cannot preserve an earlier approval (bloclabs-io/blocLabs-LearnPress-API-Extension#97).

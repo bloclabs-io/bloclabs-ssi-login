@@ -2,7 +2,9 @@
  * The bridge's behaviour, independent of HTTP:
  *
  *  1. WordPress opens a presentation request; the bridge opens a verifier session
- *     for it and hands back the wallet URL.
+ *     for it and hands back the wallet URL. With BRIDGE_DC_API_ORIGINS set it opens
+ *     a second, Digital Credentials API session for the same attempt and hands back
+ *     its request too; whichever session the holder answers settles the attempt.
  *  2. The verifier rings the bridge's callback for every session update. The
  *     bridge re-reads the session and, once it is SUCCESSFUL or FAILED, computes
  *     the commitments and calls `attest` through FireFly.
@@ -14,7 +16,7 @@
  *     and it stays readable for the attempt lifetime plus a minute.
  */
 
-import type { Config } from './config.js';
+import type { Config, DcApiConfig, QueryDefinition } from './config.js';
 import { isRecord } from './config.js';
 import { ZERO_HASH, constantTimeEqual, newRequestId, randomToken, subjectCommitment } from './crypto.js';
 import type { AttestInput, AttestOutcome, FireFlyClient } from './firefly.js';
@@ -22,8 +24,8 @@ import { FireFlyError } from './firefly.js';
 import type { Logger } from './log.js';
 import type { BridgeRequest, RequestStore } from './store.js';
 import { RESULT_GRACE_MS } from './store.js';
-import type { Evaluation, VerifierClient } from './verifier.js';
-import { VerifierError, buildSessionSetup, evaluateSession } from './verifier.js';
+import type { DcApiRequest, Evaluation, VerifierClient } from './verifier.js';
+import { VerifierError, buildDcApiSessionSetup, buildSessionSetup, evaluateSession } from './verifier.js';
 
 export class HttpError extends Error {
   constructor(
@@ -51,16 +53,30 @@ export interface BridgeOptions {
   /** Waits between attempts to read a verifier session after a transient failure. */
   sessionReadRetryDelaysMs?: number[];
   sleep?: (ms: number) => Promise<void>;
+  /**
+   * How long after a presentation request arrived its optional Digital Credentials
+   * API session may still be worked on. WordPress waits five seconds for the whole
+   * answer (BridgeClient), and the QR code must reach it within that even when the
+   * verifier is slow: past this point the extra session is given up, not awaited.
+   */
+  dcApiDeadlineMs?: number;
+}
+
+/** The `dc_api` object of docs/BRIDGE-API.md: what the browser passes to the wallet, and where it posts the answer. */
+export interface DcApiOffer {
+  requests: DcApiRequest[];
+  response_url: string;
 }
 
 export interface CreatedRequest {
   id: string;
   wallet_url: string;
-  dc_api: null;
+  dc_api: DcApiOffer | null;
 }
 
 const MAX_LIFETIME_MS = 24 * 60 * 60 * 1000;
 const MAX_NONCE_LENGTH = 512;
+const DC_API_DEADLINE_MS = 2_000;
 
 export class Bridge {
   private readonly config: Config;
@@ -72,6 +88,7 @@ export class Bridge {
   private readonly attestRetryDelaysMs: number[];
   private readonly sessionReadRetryDelaysMs: number[];
   private readonly sleep: (ms: number) => Promise<void>;
+  private readonly dcApiDeadlineMs: number;
   private readonly checks = new Map<string, { again: boolean }>();
   private idleWaiters: Array<() => void> = [];
 
@@ -85,6 +102,7 @@ export class Bridge {
     this.attestRetryDelaysMs = options.attestRetryDelaysMs ?? [1_000, 3_000];
     this.sessionReadRetryDelaysMs = options.sessionReadRetryDelaysMs ?? [500, 2_000];
     this.sleep = options.sleep ?? ((ms) => new Promise((resolve) => setTimeout(resolve, ms)));
+    this.dcApiDeadlineMs = options.dcApiDeadlineMs ?? DC_API_DEADLINE_MS;
   }
 
   /** POST /v1/presentation-requests */
@@ -124,13 +142,14 @@ export class Bridge {
 
     const id = newRequestId();
     const callbackToken = randomToken();
+    const timing = { expiresAt: new Date(expiresAt), retainUntil: new Date(expiresAt + RESULT_GRACE_MS) };
     const setup = buildSessionSetup({
       id,
       query,
-      expiresAt: new Date(expiresAt),
-      retainUntil: new Date(expiresAt + RESULT_GRACE_MS),
+      ...timing,
       webhookUrl: `${this.config.callbackUrl}/${id}`,
       webhookToken: callbackToken,
+      signedRequest: this.config.verifierSignedRequest,
     });
 
     let created;
@@ -148,7 +167,14 @@ export class Bridge {
       throw new HttpError(502, 'verifier_unavailable');
     }
 
-    this.store.add({
+    // The Digital Credentials API session is an extra: the QR code works without it, and
+    // must not wait for it. Both of its verifier calls share what is left of the deadline.
+    const dcApiDeadline = now + this.dcApiDeadlineMs;
+    const dcApiSessionId = this.config.dcApi
+      ? await this.openDcApiSession(this.config.dcApi, id, query, queryName, timing, callbackToken, dcApiDeadline)
+      : null;
+
+    const request: BridgeRequest = {
       id,
       correlationId,
       nonce,
@@ -157,29 +183,105 @@ export class Bridge {
       expiresAt,
       createdAt: now,
       callbackToken,
+      dcApi: dcApiSessionId === null ? null : { sessionId: dcApiSessionId },
       state: 'pending',
-      recheck: false,
+      recheck: new Set(),
       result: null,
       attestation: null,
-    });
-    this.log.info('presentation request opened', { id, query: queryName, expiresAt: new Date(expiresAt).toISOString() });
-    return { id, wallet_url: created.walletUrl, dc_api: null };
+    };
+    // Stored before the request is read: reading it rings the callback, which must find the request.
+    this.store.add(request);
+    const dcApi = await this.dcApiOffer(request, dcApiDeadline);
+    this.log.info('presentation request opened', { id, query: queryName, expiresAt: new Date(expiresAt).toISOString(), dcApi: dcApi !== null });
+    return { id, wallet_url: created.walletUrl, dc_api: dcApi };
   }
 
   /**
-   * POST /v1/verifier-callbacks/{id}: the verifier's doorbell. Authenticated by the
-   * per-request bearer token the bridge gave the verifier; the body is ignored.
+   * Opens the `dc_api_openid4vp` session of a request: the same query and lifetime,
+   * bound to the login pages' origins, ringing the same callback under its own id.
+   * A failure, or no time left before `deadline`, is logged and leaves the request
+   * with its cross-device session only.
    */
-  handleCallback(id: string, authorization: string | undefined): 'accepted' | 'unauthorized' | 'unknown' {
-    const request = this.store.get(id);
+  private async openDcApiSession(
+    dcApi: DcApiConfig,
+    id: string,
+    query: QueryDefinition,
+    queryName: string,
+    timing: { expiresAt: Date; retainUntil: Date },
+    callbackToken: string,
+    deadline: number,
+  ): Promise<string | null> {
+    const left = deadline - this.now();
+    if (left <= 0) {
+      this.log.warn('no time left to open a Digital Credentials API session, the QR code stands alone', { id, query: queryName });
+      return null;
+    }
+    const sessionId = newRequestId();
+    const setup = buildDcApiSessionSetup({
+      id: sessionId,
+      query,
+      ...timing,
+      webhookUrl: `${this.config.callbackUrl}/${sessionId}`,
+      webhookToken: callbackToken,
+      origins: dcApi.origins,
+    });
+    try {
+      const created = await this.verifier.createDcApiSession(setup, left);
+      if (created !== sessionId) {
+        this.log.error('the verifier ignored the requested Digital Credentials API session id', { id, dcSession: sessionId, query: queryName });
+        return null;
+      }
+      return sessionId;
+    } catch (error) {
+      this.log.error('could not open a Digital Credentials API session, the QR code stands alone', { id, query: queryName, error: (error as Error).message });
+      return null;
+    }
+  }
+
+  /**
+   * The browser's half of the Digital Credentials API session, or null when the
+   * request has none, or its request could not be read before `deadline`.
+   */
+  private async dcApiOffer(request: BridgeRequest, deadline: number): Promise<DcApiOffer | null> {
+    if (!request.dcApi || !this.config.dcApi) {
+      return null;
+    }
+    const sessionId = request.dcApi.sessionId;
+    const left = deadline - this.now();
+    if (left <= 0) {
+      // Nobody will ever answer that session: forget it, so a callback for it cannot touch the request.
+      this.store.dropDcApiSession(request);
+      this.log.warn('no time left to read the Digital Credentials API request, the QR code stands alone', { id: request.id, dcSession: sessionId });
+      return null;
+    }
+    try {
+      const requests = await this.verifier.getDcApiRequests(sessionId, left);
+      return {
+        requests,
+        response_url: `${this.config.dcApi.verifierPublicUrl}/verification-session/${encodeURIComponent(sessionId)}/response`,
+      };
+    } catch (error) {
+      this.store.dropDcApiSession(request);
+      this.log.error('could not read the Digital Credentials API request, the QR code stands alone', { id: request.id, dcSession: sessionId, error: (error as Error).message });
+      return null;
+    }
+  }
+
+  /**
+   * POST /v1/verifier-callbacks/{session}: the verifier's doorbell, for either session
+   * of a request. Authenticated by the per-request bearer token the bridge gave the
+   * verifier; the body is ignored.
+   */
+  handleCallback(sessionId: string, authorization: string | undefined): 'accepted' | 'unauthorized' | 'unknown' {
+    const request = this.store.findBySession(sessionId);
     if (!request) {
       return 'unknown';
     }
     if (authorization === undefined || !constantTimeEqual(authorization, `Bearer ${request.callbackToken}`)) {
-      this.log.warn('callback with a bad token', { id });
+      this.log.warn('callback with a bad token', { id: request.id, session: sessionId });
       return 'unauthorized';
     }
-    this.scheduleCheck(id);
+    this.scheduleCheck(sessionId);
     return 'accepted';
   }
 
@@ -208,8 +310,11 @@ export class Bridge {
       this.log.debug('expired requests deleted', { count: removed });
     }
     for (const request of this.store.needingRecheck()) {
-      request.recheck = false;
-      this.scheduleCheck(request.id);
+      const sessions = [...request.recheck];
+      request.recheck.clear();
+      for (const sessionId of sessions) {
+        this.scheduleCheck(sessionId);
+      }
     }
     return removed;
   }
@@ -224,26 +329,27 @@ export class Bridge {
     });
   }
 
-  private scheduleCheck(id: string): void {
-    const running = this.checks.get(id);
+  /** One check runs per verifier session at a time; a doorbell during a check queues one more. */
+  private scheduleCheck(sessionId: string): void {
+    const running = this.checks.get(sessionId);
     if (running) {
       running.again = true;
       return;
     }
     const entry = { again: false };
-    this.checks.set(id, entry);
+    this.checks.set(sessionId, entry);
     void (async () => {
       try {
         do {
           entry.again = false;
           try {
-            await this.check(id);
+            await this.check(sessionId);
           } catch (error) {
-            this.log.error('processing a verifier callback crashed', { id, error: (error as Error).message });
+            this.log.error('processing a verifier callback crashed', { session: sessionId, error: (error as Error).message });
           }
         } while (entry.again);
       } finally {
-        this.checks.delete(id);
+        this.checks.delete(sessionId);
         if (this.checks.size === 0) {
           const waiters = this.idleWaiters;
           this.idleWaiters = [];
@@ -253,49 +359,59 @@ export class Bridge {
     })();
   }
 
-  private async check(id: string): Promise<void> {
-    const request = this.store.get(id);
+  /**
+   * Reads one verifier session of a request and settles the request on a decision.
+   * Every state change comes after an await, and the request's other session may
+   * have settled it meanwhile, so each one is a compare-and-set on `pending`.
+   */
+  private async check(sessionId: string): Promise<void> {
+    const request = this.store.findBySession(sessionId);
     if (!request || request.state !== 'pending') {
       return;
     }
+    const id = request.id;
+    const fields = sessionId === id ? { id } : { id, session: sessionId };
     let session;
     try {
-      session = await this.readSessionWithRetry(id);
+      session = await this.readSessionWithRetry(sessionId);
     } catch (error) {
+      if (request.state !== 'pending') {
+        return;
+      }
       if (error instanceof VerifierError && error.status === 404) {
         // The verifier no longer has the session: nothing can settle this attempt.
         request.state = 'failed';
-        this.log.error('the verifier no longer has the session', { id });
+        this.log.error('the verifier no longer has the session', fields);
         return;
       }
-      request.recheck = true;
-      this.log.warn('could not read the verifier session, will try again on the next sweep', { id, error: (error as Error).message });
-      return;
-    }
-    request.recheck = false;
-    const evaluation = evaluateSession(session, this.config.queries[request.query]!);
-    if (evaluation.kind === 'undecided') {
-      this.log.debug('verifier session still undecided', { id, status: evaluation.status });
-      return;
-    }
-    if (evaluation.kind === 'inconsistent') {
-      request.state = 'failed';
-      this.log.error('verifier session cannot be used', { id, reason: evaluation.reason });
+      request.recheck.add(sessionId);
+      this.log.warn('could not read the verifier session, will try again on the next sweep', { ...fields, error: (error as Error).message });
       return;
     }
     if (request.state !== 'pending') {
       return;
     }
+    request.recheck.delete(sessionId);
+    const evaluation = evaluateSession(session, this.config.queries[request.query]!);
+    if (evaluation.kind === 'undecided') {
+      this.log.debug('verifier session still undecided', { ...fields, status: evaluation.status });
+      return;
+    }
+    if (evaluation.kind === 'inconsistent') {
+      request.state = 'failed';
+      this.log.error('verifier session cannot be used', { ...fields, reason: evaluation.reason });
+      return;
+    }
     if (this.now() >= request.expiresAt) {
       request.state = 'failed';
-      this.log.warn('wallet response after the attempt expired', { id });
+      this.log.warn('wallet response after the attempt expired', fields);
       return;
     }
     request.state = 'settling';
-    await this.settle(request, evaluation);
+    await this.settle(request, evaluation, sessionId !== id);
   }
 
-  private async settle(request: BridgeRequest, verdict: Extract<Evaluation, { kind: 'verified' | 'rejected' }>): Promise<void> {
+  private async settle(request: BridgeRequest, verdict: Extract<Evaluation, { kind: 'verified' | 'rejected' }>, viaDcApi: boolean): Promise<void> {
     let evaluation = verdict;
     if (evaluation.kind === 'verified' && this.config.firefly.registryApiName !== undefined) {
       const trusted = await this.registryTrusts(request.id, evaluation.issuer, evaluation.vct);
@@ -353,6 +469,7 @@ export class Bridge {
     this.log.info('decision attested', {
       id: request.id,
       result: attestation.result,
+      dcApi: viaDcApi,
       reused: outcome.reused,
       operation: outcome.operationId,
       transaction: outcome.transactionId,
@@ -360,16 +477,16 @@ export class Bridge {
     });
   }
 
-  private async readSessionWithRetry(id: string): Promise<Record<string, unknown>> {
+  private async readSessionWithRetry(sessionId: string): Promise<Record<string, unknown>> {
     for (let attempt = 0; ; attempt++) {
       try {
-        return await this.verifier.getSession(id);
+        return await this.verifier.getSession(sessionId);
       } catch (error) {
         const delay = this.sessionReadRetryDelaysMs[attempt];
         if (!(error instanceof VerifierError) || !error.retryable || delay === undefined) {
           throw error;
         }
-        this.log.debug('verifier session read failed, retrying', { id, attempt: attempt + 1, error: error.message });
+        this.log.debug('verifier session read failed, retrying', { session: sessionId, attempt: attempt + 1, error: error.message });
         await this.sleep(delay);
       }
     }
