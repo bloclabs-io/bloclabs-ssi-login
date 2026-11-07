@@ -3,7 +3,9 @@
 ## 0.4.0-dev (unreleased)
 
 - Agent login, bearer authentication and scope enforcement (#91, ADR 0007 follow-up 4/7). `Authorization: Bearer
-  bssi_…` authenticates a REST request over HTTPS as the token's user. WordPress determines the user at bootstrap,
+  bssi_…` authenticates a REST request over HTTPS as the token's user (plain HTTP only where
+  `wp_get_environment_type()` is `local`, as core allows for Application Passwords; the
+  `bloclabs_ssi_agent_token_requires_https` filter covers other closed stacks). WordPress determines the user at bootstrap,
   before REST routing, so `determine_current_user` (priority 20, where Application Passwords sit) only reserves a
   request that carries one of our tokens as nobody's, and the token is checked at the REST boundary, in
   `rest_authentication_errors` (priority 90), before any route runs: an expired or revoked token, a missing user, a

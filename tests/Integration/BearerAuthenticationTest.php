@@ -252,6 +252,25 @@ final class BearerAuthenticationTest extends IntegrationTestCase {
 		$this->assertSame( $user_id, get_current_user_id() );
 	}
 
+	public function test_plain_http_is_allowed_only_where_the_environment_is_local(): void {
+		$user_id = self::factory()->user->create( array( 'role' => 'subscriber' ) );
+		$this->present( $this->tokens->mint( $user_id ) );
+		unset( $_SERVER['HTTPS'] );
+		$this->assertNotSame( 'local', wp_get_environment_type(), 'the test site is not a local environment' );
+
+		$seen = array();
+		add_filter(
+			'bloclabs_ssi_agent_token_requires_https',
+			static function ( bool $requires ) use ( &$seen ): bool {
+				$seen[] = $requires;
+				return false;
+			}
+		);
+		$this->assertTrue( $this->serve(), 'a local stack without TLS may use tokens, as core allows Application Passwords' );
+		$this->assertSame( $user_id, get_current_user_id() );
+		$this->assertSame( array( true ), $seen, 'the default outside a local environment is to require HTTPS' );
+	}
+
 	/**
 	 * The account's vetoes run on every request (AGENTS.md: no login path skips
 	 * `authenticate` / `wp_authenticate_user`), so a lockout or ban set after the

@@ -15,7 +15,8 @@
  *   `WP_REST_Server::check_authentication()`, once routing has established a
  *   REST request and before any route runs. That is where the token is
  *   checked: the row by the token's SHA-256, revoked, expired, a missing
- *   user, plain HTTP, and the account's own vetoes (`wp_authenticate_user`
+ *   user, plain HTTP (except in a `local` environment, as core allows for
+ *   Application Passwords), and the account's own vetoes (`wp_authenticate_user`
  *   and `authenticate`, on every request, so a lockout or a spam flag cuts an
  *   agent off at once). An accepted token sets the current user and answers
  *   true, so the cookie nonce check stands down as it does for Application
@@ -161,7 +162,7 @@ final class BearerAuthentication {
 	 * @return TokenRecord|\WP_Error
 	 */
 	private function decide( string $hash ) {
-		if ( ! $this->settings->site_is_https() ) {
+		if ( ! $this->settings->site_is_https() && $this->requires_https() ) {
 			return $this->refuse( 'not_https', $hash );
 		}
 
@@ -191,6 +192,22 @@ final class BearerAuthentication {
 		self::$current = $record;
 		self::$refusal = null;
 		return $record;
+	}
+
+	/**
+	 * Whether a token presented over plain HTTP is refused. Yes, unless WordPress
+	 * itself calls this environment `local` (WP_ENVIRONMENT_TYPE), the rule core
+	 * applies to Application Passwords: a local stack without TLS can use tokens,
+	 * a site on the internet cannot. Filterable for other closed stacks; never
+	 * relax it on a public site, where a token on the wire is a stolen token (A1).
+	 */
+	private function requires_https(): bool {
+		/**
+		 * Whether an application token must travel over HTTPS.
+		 *
+		 * @param bool $requires Default: true unless wp_get_environment_type() is `local`.
+		 */
+		return (bool) apply_filters( 'bloclabs_ssi_agent_token_requires_https', 'local' !== wp_get_environment_type() );
 	}
 
 	/**
