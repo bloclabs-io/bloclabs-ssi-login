@@ -1,8 +1,10 @@
 /**
  * What the agent keeps between commands, under AGENT_HOME (default `.agent`
  * next to the current directory; `/runtime/agent` in the demo stack): its
- * key, its credential and its current token. Files are the agent's alone
- * (0600). Nothing here is ever committed.
+ * key, its credential, the subject id the credential binds (`subject.id`,
+ * what a site links to an account) and its current token. Files are the
+ * agent's alone (0600) except the public subject id. Nothing here is ever
+ * committed.
  */
 
 import { chmodSync, existsSync, mkdirSync, readFileSync, unlinkSync, writeFileSync } from 'node:fs';
@@ -13,6 +15,7 @@ import { AgentError, generateKey } from './jose.mjs';
 export const FILES = {
 	key: 'agent-key.jwk',
 	credential: 'credential.sd-jwt',
+	subject: 'subject.id',
 	token: 'token.json',
 };
 
@@ -41,9 +44,12 @@ export class Store {
 	}
 
 	write(name, text) {
-		mkdirSync(this.home, { recursive: true, mode: 0o700 });
-		writeFileSync(this.path(name), text.endsWith('\n') ? text : `${text}\n`, { mode: 0o600 });
-		chmodSync(this.path(name), 0o600);
+		// The directory is traversable so that another process (the demo's
+		// WP-CLI step) can read subject.id; the key, credential and token stay 0600.
+		const mode = name === 'subject' ? 0o644 : 0o600;
+		mkdirSync(this.home, { recursive: true, mode: 0o755 });
+		writeFileSync(this.path(name), text.endsWith('\n') ? text : `${text}\n`, { mode });
+		chmodSync(this.path(name), mode);
 	}
 
 	remove(name) {

@@ -68,5 +68,18 @@ wp config set BLOCLABS_SSI_LINKING_POLICY "auto_provision"
 wp config set BLOCLABS_SSI_CREDENTIAL_QUERY "default"
 wp config set BLOCLABS_SSI_SUBJECT_KEY "${subject}"
 
+# Agent login (ADR 0007). The demo runs on plain HTTP, which a bearer token
+# is refused over unless WordPress knows it is a local environment.
+wp config set BLOCLABS_SSI_AGENT_LOGIN_ENABLED true --raw
+wp config set BLOCLABS_SSI_AGENT_CREDENTIAL_QUERY "agent"
+wp config set WP_ENVIRONMENT_TYPE "local"
+
 wp plugin activate bloclabs-ssi-login
+
+# The account the demo agent's own key is linked to by ./agent.sh. An author,
+# so a token with the content scope can save a draft. Nobody logs in to it
+# with a password; the one WP-CLI generates is discarded.
+if ! wp user get nightly-agent --field=ID >/dev/null 2>&1; then
+	wp user create nightly-agent agent@example.com --role=author --display_name="Nightly backup (agent)" --porcelain >/dev/null
+fi
 wp bloclabs-ssi subscribe --webhook-url="http://wordpress/wp-json/bloclabs-ssi/v1/firefly/events"

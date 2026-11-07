@@ -38,6 +38,25 @@ The repository is mounted as the plugin. Apache is told to refuse `demo/` and `.
 
 The must-use plugin in `wordpress/mu-plugins` is the blocLabs look (Barlow, Exo, pill buttons, `#ff782d`). It is not part of the plugin. Orange text on white fails contrast for body text, and white text on `#ff782d` does too, so the orange controls use dark text.
 
+## Agent
+
+`./agent.sh` runs ADR 0007's agent login on the same stack with no browser: [`agent/`](agent/) is the reference
+client, run through the `agent` service (profile `agent`, `node:22.21.0-alpine`, the client mounted read-only, its
+key, credential and token under `runtime/agent/`). The issuer has a second profile, `agent` (`acts_for`, `scope`,
+`agent.name`, `agent.operator`, all selectively disclosable), the bridge a second query, `agent`, that asks for
+those claims from `http://issuer.demo/openid4vci/agent`, and `./setup.sh` trusts the generated issuer for that type
+in the registry too. `wp-setup.sh` turns agent login on (`BLOCLABS_SSI_AGENT_LOGIN_ENABLED`, query `agent`), sets
+`WP_ENVIRONMENT_TYPE` to `local` so a token is accepted over the demo's plain HTTP, and creates the `nightly-agent`
+author account the agent's own key is linked to.
+
+`bin/agent-offer.mjs` asks the issuer for an agent offer (with `acts_for` as a per-offer override when
+`./agent.sh --acts-for` is used) and writes `runtime/agent-offer.url`. `bin/wp-agent.sh`, in the `wpcli`
+container, runs the two demo-only WP-CLI commands from the must-use plugin: `wp bloclabs-demo link-agent` links
+the agent's `subject.id` to an account, and `wp bloclabs-demo allow-agents` turns on *Agents may act for this
+account* for the account a subject id is linked to. Both stand in for what a person does on the profile screen; the
+plugin itself has no such commands. `bridge.queries.json` is rewritten on every start, so a `runtime/` made before
+the agent query existed gets it.
+
 ## Reset
 
 From this directory:

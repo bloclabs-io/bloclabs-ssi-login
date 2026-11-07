@@ -143,6 +143,11 @@ export async function main(argv, env = process.env, io = { stdout: process.stdou
 			const got = await receive(rest[0], key, { log, txCode: values['tx-code'], proofKey });
 			store.write('credential', got.credential);
 			const me = identity(store);
+			if (me.subject_id !== null) {
+				store.write('subject', me.subject_id);
+			} else {
+				store.remove('subject');
+			}
 			log(`credential stored in ${store.path('credential')}`);
 			say(keyValue(p, 'type', me.credential?.vct ?? '(no vct)'));
 			say(keyValue(p, 'issuer', me.credential?.issuer ?? '(no issuer)'));

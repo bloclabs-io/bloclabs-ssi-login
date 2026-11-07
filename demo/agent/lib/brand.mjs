@@ -2,7 +2,7 @@
  * The blocLabs look, as far as a terminal has one (AGENTS.md, "blocLabs look
  * and feel"): the wordmark, blocLabs orange #ff782d for headings and the
  * accent, dark grey for body text. Colour only on a terminal, never in a
- * pipe, and never when NO_COLOR is set.
+ * pipe, and never when NO_COLOR is set to a non-empty value (no-color.org).
  */
 
 const ORANGE = '\u001b[38;2;255;120;45m';
@@ -12,7 +12,7 @@ const DIM = '\u001b[2m';
 const RESET = '\u001b[0m';
 
 export function colours(stream = process.stdout, env = process.env) {
-	return Boolean(stream.isTTY) && !('NO_COLOR' in env) && env.TERM !== 'dumb';
+	return Boolean(stream.isTTY) && !(typeof env.NO_COLOR === 'string' && env.NO_COLOR !== '') && env.TERM !== 'dumb';
 }
 
 export function paint(on) {

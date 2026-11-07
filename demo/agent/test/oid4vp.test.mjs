@@ -63,6 +63,21 @@ test('a redirect_uri client id that names another response_uri is a relay, not a
 	}
 });
 
+test('the pre-1.0 redirect_uri form, a bare URI with client_id_scheme, is read the same way', async () => {
+	const verifier = await startVerifier();
+	try {
+		const session = verifier.createSession();
+		const request = verifier.state.sessions.get(session.id).request;
+		const bare = { ...request, client_id: request.response_uri, client_id_scheme: 'redirect_uri' };
+		assert.equal(checkVerifier(bare, { clientId: request.response_uri, leaf: null }).responseUri, request.response_uri);
+		assert.equal(checkVerifier({ ...request, client_id: `${request.response_uri}/` }, { clientId: null, leaf: null }).clientId, `${request.response_uri}/`, 'without client_id_scheme a bare URI is still the redirect_uri form');
+		assert.throws(() => checkVerifier({ ...bare, client_id: 'http://evil.test/collect' }, { clientId: null, leaf: null }), /must name the response_uri/);
+		assert.throws(() => checkVerifier({ ...bare, client_id_scheme: 'pre-registered' }, { clientId: null, leaf: null }), /scheme http is not one this agent can check/);
+	} finally {
+		await verifier.close();
+	}
+});
+
 test('only vp_token by direct_post in clear is answered', async () => {
 	const encrypted = await startVerifier({ responseMode: 'direct_post.jwt' });
 	try {
@@ -83,7 +98,9 @@ test('client id schemes this agent cannot check are refused rather than trusted'
 		const { walletUrl } = verifier.createSession();
 		const { request, leaf, clientId } = await fetchRequest(walletUrl);
 		assert.throws(() => checkVerifier(request, { clientId, leaf }), /client id scheme did is not one this agent can check/);
+		assert.equal(checkVerifier(request, { clientId, leaf, expected: 'did:web:verifier.test' }).clientId, 'did:web:verifier.test', 'unless the operator pinned exactly that id');
 		assert.throws(() => checkVerifier({ ...request, client_id: 'x509_san_dns:verifier.test' }, { clientId: 'x509_san_dns:verifier.test', leaf: null }), /needs a signed request/);
+		assert.throws(() => checkVerifier({ ...request, client_id: 'x509_san_dns:verifier.test' }, { clientId: 'x509_san_dns:verifier.test', leaf: null, expected: 'x509_san_dns:verifier.test' }), /needs a signed request/, 'a pin never waives the signature an x509 id needs');
 	} finally {
 		await verifier.close();
 	}

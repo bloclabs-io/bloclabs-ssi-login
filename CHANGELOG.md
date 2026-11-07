@@ -2,6 +2,14 @@
 
 ## 0.1.0-dev (unreleased)
 
+- Agent login, documentation and demo (#94, closes #64): SECURITY-MODEL.md gains the agent threats A1–A14 with
+  where each mitigation lives, ARCHITECTURE.md the agent routes, the tokens table, the agent trust boundary and the
+  ADR 0007 decision, and the README no longer lists agents as planned. A reference agent client under `demo/agent/`
+  (Node 22, no dependencies) receives an SD-JWT VC over OpenID4VCI, logs in over OpenID4VP with a key-binding JWT
+  and no browser, presenting only to the request its own initiate returned, takes the application token and uses
+  and revokes it. `demo/agent.sh` runs that login on the Docker demo: the issuer gets an `agent` credential profile,
+  the bridge an `agent` query, the registry trusts the issuer for it, and WordPress turns agent login on in a
+  `local` environment.
 - The Docker demo publishes WordPress, the web wallet and the wallet API on ports from `demo/.env` (`WORDPRESS_PORT`, `WALLET_WEB_PORT`, `WALLET_API_PORT`; defaults 8080, 7106 and 7006), still bound to `127.0.0.1`. The wallet page's `WALLET_API2_PUBLIC_URL` and the wallet API's `publicBaseUrl` follow the wallet API port (#67).
 - The Docker demo signs registry deployment and `setIssuer` with a signer on a network the bridge does not join. FireFly's signer never holds the registry owner key (#67).
 - The Docker demo does not leave the registry owner key in the signer's stored directory. The signer rebuilds its wallet from the attestor key on every start, and drops an in-memory owner key when setup is no longer running (#67).

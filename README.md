@@ -8,9 +8,10 @@ A verifier checks it and records its decision on a blockchain through
 [Hyperledger FireFly](https://hyperledger-firefly.github.io/firefly/latest/). FireFly streams that record to
 WordPress, which logs the visitor in. The chain holds commitments only, never claims or identifiers.
 
-> **Status: pre-alpha (0.1.0-dev).** The plugin framework, the attestor contract, the FireFly event path and the
-> reference verifier bridge ([`bridge/`](bridge/), on walt.id verifier-api2) are built and unit-tested. A login has
-> not been exercised end to end with a real wallet yet, so treat the whole as unreleased. See [Roadmap](#roadmap).
+> **Status: pre-alpha (0.1.0-dev).** The plugin framework, the attestor contract, the FireFly event path, the
+> reference verifier bridge ([`bridge/`](bridge/), on walt.id verifier-api2), agent login with an application token
+> and the reference agent client ([`demo/agent/`](demo/agent/)) are built and unit-tested. A login has not been
+> exercised end to end with a real wallet yet, so treat the whole as unreleased. See [Roadmap](#roadmap).
 
 ```mermaid
 flowchart LR
@@ -30,8 +31,9 @@ flowchart LR
 - **Provable logins.** Each decision is an on-chain event signed by an authorised verifier, so it can be audited
   later without trusting the web server's logs. Per-attempt blinded commitments keep one person's logins unlinkable
   on the chain.
-- **Verifiable agents (planned).** Software agents can hold credentials too. The same flow is designed to let them
-  prove who they are and who they act for (roadmap 0.4).
+- **Verifiable agents.** Software agents hold credentials too. The same flow lets an agent prove who it is and
+  who it acts for, with no browser, and gives it a scoped, short-lived application token instead of a cookie
+  ([ADR 0007](docs/adr/0007-agent-login.md)). The chain shows which agent logged in where.
 
 ## How it works
 
@@ -50,6 +52,13 @@ flowchart LR
 
 The full flow, with every FireFly call, is in [docs/FIREFLY-FLOW.md](docs/FIREFLY-FLOW.md).
 
+An agent runs the same steps itself: `POST /agent/initiate` opens an attempt bound to it by a secret in a header,
+it fetches the OpenID4VP request the wallet URL points to, checks who is asking, presents its SD-JWT VC with a
+key-binding JWT, then polls `POST /agent/token` until the chain has spoken. WordPress resolves the account (the
+agent's own key linked to one, or an `acts_for` claim naming a principal who opted in), runs the same checks a
+password login gets, and returns an opaque `bssi_` token once. The token authenticates `/wp-json/` requests as a
+Bearer header, within its scope, until it expires or is revoked.
+
 ## Documentation
 
 | Document | What it covers |
@@ -58,8 +67,9 @@ The full flow, with every FireFly call, is in [docs/FIREFLY-FLOW.md](docs/FIREFL
 | [FireFly flow](docs/FIREFLY-FLOW.md) | Setup and runtime API calls, payloads, timings measured on a real node |
 | [Bridge API](docs/BRIDGE-API.md) | The contract between the plugin and any OpenID4VP verifier |
 | [Bridge](bridge/README.md) | The reference bridge on walt.id verifier-api2: setup, configuration, limitations |
+| [Agent client](demo/agent/README.md) | The reference agent: receives a credential, logs in without a browser, uses and revokes the token |
 | [Security model](docs/SECURITY-MODEL.md) | Threats and mitigations, including the cross-device QR relay attack |
-| [Decisions](docs/adr/) | Why OpenID4VP at the edge, a custom table, webhooks with a pull fallback, on-chain attestation, a dependency-free bridge |
+| [Decisions](docs/adr/) | Why OpenID4VP at the edge, a custom table, webhooks with a pull fallback, on-chain attestation, a dependency-free bridge, an on-chain issuer registry, agent login with a token |
 
 ## Requirements
 
@@ -91,6 +101,18 @@ Only three ports are published, all on `127.0.0.1`. The defaults are WordPress a
 5. In the wallet, on Present, paste that address and approve.
 6. The site home page greets you as Ada Lovelace. The demo creates that account from the credential (`auto_provision`); the display name is the credential's `name` claim.
 
+An agent logs in to the same stack with no browser:
+
+```bash
+./agent.sh
+```
+
+It asks the issuer for an agent credential, gives it to the reference client ([`demo/agent/`](demo/agent/)), links
+the agent's key to the `nightly-agent` account, logs in, calls the REST API with the token (who am I, save a draft)
+and revokes it. `./agent.sh --acts-for <Ada's DID>` issues a delegated credential instead, after Ada has logged in
+once and the demo has turned on *Agents may act for this account* for her; the token then acts as Ada, within what
+Ada may do. Details in [demo/agent/README.md](demo/agent/README.md).
+
 The wallet picks up blocLabs orange from its image settings. WordPress in the demo also uses Barlow and Exo, pill buttons and the light panel colour. The plugin itself stays unbranded; the demo look is a must-use plugin mounted only here.
 
 This stack is a local demo, not a deployment guide. Reset it with `docker compose down -v` and `rm -rf runtime signer registry-owner` from `demo/` (the chain data and the generated keys have to go together). Details of how the containers find each other are in [demo/README.md](demo/README.md).
@@ -116,7 +138,8 @@ Without PHP locally: `docker run --rm -v "$PWD:/app" -w /app composer:2 sh -c "c
   (built: [`bridge/`](bridge/)), and a one-command Docker demo (WordPress, FireFly, Besu, verifier) (open).
 - **0.3** "Link a credential" on the profile screen; same-device login through the browser's
   [Digital Credentials API](https://www.w3.org/TR/digital-credentials/); integration tests on `wp-env`, in addition to the current CI suite.
-- **0.4** On-chain trusted-issuer registry; agent login that issues an application token instead of a cookie.
+- **0.4** On-chain trusted-issuer registry (built); agent login that issues an application token instead of a
+  cookie, with the reference agent client and the browserless demo (built, [ADR 0007](docs/adr/0007-agent-login.md)).
 - **1.0** External security review, WordPress.org listing (founder decision).
 
 ## Security

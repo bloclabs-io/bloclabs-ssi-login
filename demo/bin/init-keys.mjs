@@ -216,7 +216,24 @@ log:
 `;
 }
 
-function bridgeQueries(did) {
+/**
+ * The bridge's named queries: `default` for the browser login (the member
+ * credential), `agent` for ADR 0007 agent attempts (the agent credential, with
+ * the claims TokenIssuer reads: acts_for, scope and the agent's name). Both
+ * accept only the generated issuer. Rewritten on every start, so a runtime
+ * made before the agent query existed gets it.
+ *
+ * @param {string} did
+ */
+export function bridgeQueries(did) {
+	const policies = {
+		vc_policies: [
+			'signature',
+			'expiration',
+			'not-before',
+			{ policy: 'allowed-issuer', allowed_issuer: [did] },
+		],
+	};
 	return `${JSON.stringify({
 		default: {
 			dcql_query: {
@@ -234,14 +251,25 @@ function bridgeQueries(did) {
 					},
 				],
 			},
-			policies: {
-				vc_policies: [
-					'signature',
-					'expiration',
-					'not-before',
-					{ policy: 'allowed-issuer', allowed_issuer: [did] },
+			policies,
+		},
+		agent: {
+			dcql_query: {
+				credentials: [
+					{
+						id: 'agent',
+						format: 'dc+sd-jwt',
+						meta: { vct_values: ['http://issuer.demo/openid4vci/agent'] },
+						claims: [
+							{ path: ['acts_for'] },
+							{ path: ['scope'] },
+							{ path: ['agent', 'name'] },
+							{ path: ['agent', 'operator'] },
+						],
+					},
 				],
 			},
+			policies,
 		},
 	}, null, 2)}\n`;
 }
@@ -253,6 +281,7 @@ function init() {
 	const ready = join(runtime, 'ready');
 	try {
 		readFileSync(ready);
+		write('bridge.queries.json', bridgeQueries(readFileSync(join(runtime, 'issuer.did'), 'utf8').replace(/\r/g, '').trim()));
 		process.stdout.write('demo keys already exist\n');
 		return;
 	} catch {

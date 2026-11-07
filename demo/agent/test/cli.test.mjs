@@ -57,6 +57,7 @@ test('the CLI takes an agent from no key to a revoked token, with its state in A
 		assert.match(r.stdout, /credential stored/);
 		assert.match(r.stdout, /subject id\s+did:jwk:/);
 		assert.ok(existsSync(join(home, 'credential.sd-jwt')));
+		assert.match(readFileSync(join(home, 'subject.id'), 'utf8'), /^did:jwk:[A-Za-z0-9_-]+\n$/, 'the subject id is written for the operator to link');
 
 		r = await run(['whoami', '--json'], env);
 		const held = JSON.parse(r.stdout);

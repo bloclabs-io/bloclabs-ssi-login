@@ -9,11 +9,14 @@
  *
  * - the request's `client_id` is the one the wallet URL named, and the one
  *   the operator pinned, if any;
- * - a `redirect_uri:` client id names exactly the `response_uri`;
+ * - a `redirect_uri:` client id names exactly the `response_uri` (also in the
+ *   pre-1.0 form, a bare URI with `client_id_scheme: redirect_uri`);
  * - an `x509_san_dns:` or `x509_hash:` client id comes in a signed request
  *   whose `x5c` leaf certificate carries that DNS name or has that hash, the
  *   signature verifies under the leaf's key, and the `response_uri` is on
  *   that host;
+ * - a client id of any other scheme (`did:`, a pre-registered name) is
+ *   presented to only when the operator pinned exactly that id;
  * - the response goes back by `direct_post`, in clear. Encrypted responses
  *   (`direct_post.jwt`) are not supported here.
  */
@@ -128,10 +131,15 @@ export function checkVerifier(req, context) {
 	}
 
 	const colon = clientId.indexOf(':');
-	const scheme = colon === -1 ? '' : clientId.slice(0, colon);
-	const value = colon === -1 ? clientId : clientId.slice(colon + 1);
+	let scheme = colon === -1 ? '' : clientId.slice(0, colon);
+	let value = colon === -1 ? clientId : clientId.slice(colon + 1);
+	if ((scheme === 'http' || scheme === 'https') && (req.client_id_scheme === 'redirect_uri' || req.client_id_scheme === undefined)) {
+		// Drafts before 1.0 carried the scheme in `client_id_scheme` and the bare URI in `client_id`.
+		scheme = 'redirect_uri';
+		value = clientId;
+	}
 	if (scheme === 'redirect_uri') {
-		if (value.replace(/\/+$/, '') !== responseUri) {
+		if (value.replace(/\/+$/, '') !== responseUri.replace(/\/+$/, '')) {
 			throw new AgentError('a redirect_uri client id must name the response_uri', 'verifier_mismatch');
 		}
 	} else if (scheme === 'x509_san_dns' || scheme === 'x509_hash') {
@@ -149,9 +157,11 @@ export function checkVerifier(req, context) {
 		} else if (certificateHash(context.leaf) !== value) {
 			throw new AgentError('the request\'s certificate is not the one the client id names', 'verifier_mismatch');
 		}
-	} else {
-		throw new AgentError(`client id scheme ${scheme === '' ? '(none)' : scheme} is not one this agent can check; it presents to redirect_uri, x509_san_dns and x509_hash verifiers`, 'unsupported');
+	} else if (!context.expected) {
+		throw new AgentError(`client id scheme ${scheme === '' ? '(none)' : scheme} is not one this agent can check; it presents to redirect_uri, x509_san_dns and x509_hash verifiers, or to the client id pinned with --verifier`, 'unsupported');
 	}
+	// Any other scheme is accepted only because the operator pinned exactly this
+	// client id. An unsigned request proves no more than a redirect_uri one does.
 
 	return { clientId, responseUri, nonce: req.nonce, state: typeof req.state === 'string' ? req.state : null };
 }
