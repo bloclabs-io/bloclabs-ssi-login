@@ -15,6 +15,12 @@ export interface PresentationResult {
   issuer: string | null;
   presentation_hash: string;
   claims: Record<string, unknown>;
+  /**
+   * The credential's `exp` as ISO 8601, when it is an SD-JWT VC NumericDate.
+   * Absent when the credential names no usable expiry. A verified agent result
+   * always has it: the agent query refuses a credential that does not.
+   */
+  expires_at?: string;
 }
 
 export interface AttestationRecord {

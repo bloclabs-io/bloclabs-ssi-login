@@ -1,8 +1,9 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 
+import type { QueryDefinition } from '../src/config.js';
 import { presentationHash } from '../src/crypto.js';
-import { buildDcApiSessionSetup, buildSessionSetup, evaluateSession, holderSubjectId, projectClaimPath, selectClaims } from '../src/verifier.js';
+import { buildDcApiSessionSetup, buildSessionSetup, credentialExpiresAt, evaluateSession, holderSubjectId, projectClaimPath, selectClaims } from '../src/verifier.js';
 import { credentialData, failedSession, HOLDER_JWK, PRESENTATION_HASH_VECTOR, QUERIES, SD_JWT_PRESENTATION, successfulSession } from './helpers.js';
 
 const query = QUERIES.default;
@@ -144,6 +145,18 @@ describe('session evaluation', () => {
     assert.deepEqual(evaluation.claims, { given_name: 'Ada', email: 'ada@example.com', address: { locality: 'London' } });
     assert.equal(evaluation.presentationHash, presentationHash({ login: [SD_JWT_PRESENTATION] }));
     assert.equal(evaluation.presentationHash, PRESENTATION_HASH_VECTOR, 'the hash of the vp_token as walt.id reports it is pinned');
+    assert.equal(evaluation.expiresAt, new Date(1_793_536_000 * 1000).toISOString(), 'the credential exp, as ISO 8601');
+  });
+
+  it('reports no expiry when exp is not a NumericDate', () => {
+    assert.equal(credentialExpiresAt(undefined), null);
+    assert.equal(credentialExpiresAt('1793536000'), null);
+    assert.equal(credentialExpiresAt(Number.NaN), null);
+    assert.equal(credentialExpiresAt(0), null);
+    assert.equal(credentialExpiresAt(-1), null);
+    const evaluation = evaluateSession(successfulSession('x', { credentialData: credentialData({ exp: undefined }) }), query);
+    assert.equal(evaluation.kind, 'verified');
+    assert.equal((evaluation as { expiresAt: string | null }).expiresAt, null);
   });
 
   it('reads a rejection, with the presentation hash when a presentation was received', () => {
@@ -213,5 +226,78 @@ describe('session evaluation', () => {
     const evaluation = evaluateSession(successfulSession('x', { credential }), query);
     assert.equal(evaluation.kind, 'verified');
     assert.equal((evaluation as { issuer: string | null }).issuer, 'https://issuer.example.com');
+  });
+});
+
+const AGENT_VCT = 'https://issuer.example.com/credentials/agent';
+const agentQuery: QueryDefinition = {
+  profile: 'agent',
+  dcql_query: {
+    credentials: [{
+      id: 'agent',
+      format: 'dc+sd-jwt',
+      meta: { vct_values: [AGENT_VCT, 'https://issuer.example.com/credentials/agent-admin'] },
+      claims: [
+        { path: ['acts_for'] },
+        { path: ['scope'] },
+        { path: ['agent', 'name'] },
+        { path: ['agent', 'operator'] },
+      ],
+    }],
+  },
+};
+
+function agentData(overrides: Record<string, unknown> = {}): Record<string, unknown> {
+  return credentialData({
+    vct: AGENT_VCT,
+    acts_for: 'urn:ietf:params:oauth:jwk-thumbprint:sha-256:principal',
+    scope: ['read', 'content'],
+    agent: { name: 'Nightly backup', operator: 'Ada Lovelace', extra: 'not disclosed' },
+    ...overrides,
+  });
+}
+
+describe('agent query', () => {
+  it('returns the agent claims and the credential expiry, and nothing structural', () => {
+    const evaluation = evaluateSession(successfulSession('x', { queryId: 'agent', credentialData: agentData() }), agentQuery);
+    assert.equal(evaluation.kind, 'verified');
+    if (evaluation.kind !== 'verified') {
+      return;
+    }
+    assert.equal(evaluation.vct, AGENT_VCT);
+    assert.equal(evaluation.expiresAt, new Date(1_793_536_000 * 1000).toISOString());
+    assert.deepEqual(evaluation.claims, {
+      acts_for: 'urn:ietf:params:oauth:jwk-thumbprint:sha-256:principal',
+      scope: ['read', 'content'],
+      agent: { name: 'Nightly backup', operator: 'Ada Lovelace' },
+    });
+    assert.equal(Object.hasOwn(evaluation.claims, 'cnf'), false);
+    assert.equal(Object.hasOwn(evaluation.claims, 'exp'), false);
+  });
+
+  it('accepts any type the query pins', () => {
+    const evaluation = evaluateSession(
+      successfulSession('x', { queryId: 'agent', credentialData: agentData({ vct: 'https://issuer.example.com/credentials/agent-admin' }) }),
+      agentQuery,
+    );
+    assert.equal(evaluation.kind, 'verified');
+    assert.equal((evaluation as { vct: string }).vct, 'https://issuer.example.com/credentials/agent-admin');
+  });
+
+  it('does not attest a credential of a type the query does not pin', () => {
+    const evaluation = evaluateSession(
+      successfulSession('x', { queryId: 'agent', credentialData: agentData({ vct: 'https://issuer.example.com/credentials/login' }) }),
+      agentQuery,
+    );
+    assert.equal(evaluation.kind, 'inconsistent');
+    assert.match((evaluation as { reason: string }).reason, /not one the agent query pins/);
+  });
+
+  it('does not attest an agent credential with no NumericDate exp', () => {
+    for (const exp of [undefined, '1793536000', 0]) {
+      const evaluation = evaluateSession(successfulSession('x', { queryId: 'agent', credentialData: agentData({ exp }) }), agentQuery);
+      assert.equal(evaluation.kind, 'inconsistent', `exp ${String(exp)} is not a bound`);
+      assert.match((evaluation as { reason: string }).reason, /no NumericDate exp/);
+    }
   });
 });

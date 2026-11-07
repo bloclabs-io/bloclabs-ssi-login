@@ -36,7 +36,13 @@ Request:
   never put it on chain, in a log, in the wallet request or in the verifier session. WordPress keeps it on the
   attempt row to recompute the commitment at completion.
 - `query`: the name of a DCQL query configured in the bridge (for example "a PID with family_name and
-  birth_date", or "an employee credential from issuer X"). WordPress never sends DCQL itself.
+  birth_date", or "an employee credential from issuer X"). WordPress never sends DCQL itself. The name `agent`
+  is the agent-credential profile ([ADR 0007](adr/0007-agent-login.md)): the reference bridge refuses to start
+  unless that query, or any query marked `"profile": "agent"`, pins `meta.vct_values` and asks for `acts_for`,
+  `scope`, `agent.name` and `agent.operator`. A presented credential whose `vct` is not one of those values is
+  not attested. With the trusted-issuer registry configured, the presented `(issuer, vct)` is the pair checked
+  on chain, so an issuer trusted for a person's credential is not trusted for the agent type unless the
+  registry says so.
 - `expires_at`: refuse wallet responses after this time. *Reference bridge:* passed to walt.id as the session's
   `expiration_date`; the bridge also refuses to attest a decision that arrives after it.
 
@@ -114,7 +120,8 @@ Response `200`:
   "subject_id": "did:jwk:eyJrdHkiOi…",
   "issuer": "did:web:issuer.example.com",
   "presentation_hash": "ced03b89…69f5",
-  "claims": {"given_name": "Ada", "email": "ada@example.com"}
+  "claims": {"given_name": "Ada", "email": "ada@example.com"},
+  "expires_at": "2026-11-03T12:00:00.000Z"
 }
 ```
 - `subject_id`: a stable holder identifier. For SD-JWT VC use the holder key (`cnf`) thumbprint or a DID; for
@@ -134,6 +141,12 @@ Response `200`:
   silently changing the hashes on chain.
 - `claims`: only what the query disclosed. *Reference bridge:* the values at the DCQL claim paths the query asked
   for; for a credential query without `claims`, every disclosed claim except the registered ones.
+- `expires_at` (optional): the credential's `exp` as an ISO 8601 time in UTC, when `exp` is a NumericDate (seconds
+  since the epoch). Absent when the credential has no usable `exp`. WordPress bounds an agent token by it
+  (`min(issued + agent_token_ttl, expires_at)`, ADR 0007); without the field the token TTL applies alone.
+  *Reference bridge:* read from the disclosed SD-JWT VC `exp`. An agent query refuses a credential with no
+  NumericDate `exp` before attesting, so a verified agent result always carries the field. A person's login
+  still succeeds without it, and the field is then omitted.
 
 Answer `409` while the request is undecided, `404` once the result has expired. *Reference bridge:*
 `409 {"error":"pending"}` until FireFly accepted the attestation, `200` for a verified login,

@@ -13,7 +13,10 @@
  *     the presented credential. An untrusted pair is attested as a rejection; a
  *     registry that cannot answer fails the attempt closed, with no attestation.
  *  4. Only after FireFly accepted the attestation does the result become readable,
- *     and it stays readable for the attempt lifetime plus a minute.
+ *     and it stays readable for the attempt lifetime plus a minute. A verified
+ *     result carries `expires_at` when the credential's `exp` is a NumericDate.
+ *     An agent query (`profile: agent`) never attests a credential of another
+ *     type, or one with no such `exp`.
  */
 
 import type { Config, DcApiConfig, QueryDefinition } from './config.js';
@@ -461,6 +464,7 @@ export class Bridge {
         issuer: evaluation.issuer,
         presentation_hash: evaluation.presentationHash,
         claims: evaluation.claims,
+        ...(evaluation.expiresAt === null ? {} : { expires_at: evaluation.expiresAt }),
       };
       request.state = 'verified';
     } else {

@@ -61,6 +61,47 @@ describe('configuration', () => {
     assert.throws(() => withQueries({ default: { dcql_query: { credentials: [{ id: 'a', format: 'dc+sd-jwt', meta: {}, claims: [{ path: [] }] }] } } }), /non-empty "path"/);
     assert.throws(() => withQueries({ 'bad name': QUERIES.default }), /query name "bad name"/);
     assert.throws(() => withQueries({ default: { ...QUERIES.default, policies: 'signature' } }), /policies must be an object/);
+    assert.throws(() => withQueries({ default: { ...QUERIES.default, profile: 'person' } }), /profile must be "agent"/);
+  });
+
+  it('requires an agent query to pin the credential type and ask for the agent claims', () => {
+    const claims = [
+      { path: ['acts_for'] },
+      { path: ['scope'] },
+      { path: ['agent', 'name'] },
+      { path: ['agent', 'operator'] },
+    ];
+    const credential = {
+      id: 'agent',
+      format: 'dc+sd-jwt',
+      meta: { vct_values: ['https://issuer.example.com/credentials/agent'] },
+      claims,
+    };
+    const agent = { dcql_query: { credentials: [credential] } };
+    const withQueries = (queries: unknown) => loadConfig(baseEnv({ BRIDGE_QUERIES: JSON.stringify(queries) }));
+
+    const named = withQueries({ default: QUERIES.default, agent });
+    assert.equal(named.queries['agent']?.profile, 'agent', 'the name agent is the profile, with no extra field');
+    assert.equal(named.queries['default']?.profile, undefined, 'a person\'s query is not an agent query');
+    assert.equal(Object.hasOwn(named.queries['agent']!.dcql_query, 'profile'), false, 'the profile is not part of the DCQL');
+
+    const marked = withQueries({ default: QUERIES.default, night: { ...agent, profile: 'agent' } });
+    assert.equal(marked.queries['night']?.profile, 'agent', 'profile agent applies under another name');
+
+    const refused = (query: Record<string, unknown>, message: RegExp) =>
+      assert.throws(
+        () => withQueries({ default: QUERIES.default, agent: query }),
+        (error: unknown) => error instanceof ConfigError && message.test(error.message),
+        `expected ${message} for ${JSON.stringify(query)}`,
+      );
+    refused({ dcql_query: { credentials: [{ ...credential, meta: {} }] } }, /must pin meta\.vct_values/);
+    refused({ dcql_query: { credentials: [{ ...credential, meta: { vct_values: [] } }] } }, /must pin meta\.vct_values/);
+    refused({ dcql_query: { credentials: [{ ...credential, meta: { vct_values: [''] } }] } }, /must pin meta\.vct_values/);
+    refused({ dcql_query: { credentials: [{ ...credential, meta: { vct_values: [1] } }] } }, /must pin meta\.vct_values/);
+    refused({ dcql_query: { credentials: [{ ...credential, claims: claims.slice(1) }] } }, /must ask for acts_for/);
+    refused({ dcql_query: { credentials: [{ ...credential, claims: claims.filter((claim) => claim.path[0] !== 'scope') }] } }, /must ask for scope/);
+    refused({ dcql_query: { credentials: [{ ...credential, claims: claims.filter((claim) => claim.path[1] !== 'name') }] } }, /must ask for agent\.name/);
+    refused({ dcql_query: { credentials: [{ ...credential, claims: undefined }] } }, /must ask for acts_for/);
   });
 
   it('turns the Digital Credentials API path on only when origins are configured', () => {

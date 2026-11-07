@@ -17,6 +17,11 @@ export interface QueryDefinition {
   dcql_query: DcqlQuery;
   /** walt.id verification policies (`vp_policies`, `vc_policies`, `specific_vc_policies`), optional. */
   policies?: Record<string, unknown>;
+  /**
+   * `agent` for the agent-credential profile (ADR 0007): a query named `agent`,
+   * or any query that sets `"profile": "agent"`. The verifier never sees this.
+   */
+  profile?: 'agent';
 }
 
 export interface DcqlQuery {
@@ -218,6 +223,12 @@ function httpUrl(value: string, name: string): string {
  * subject from the holder key the presentation is bound to, so every credential
  * query must keep cryptographic holder binding, 0.2 understands SD-JWT VC only,
  * and a query must make the wallet present exactly one credential.
+ *
+ * A query named `agent`, or one that sets `"profile": "agent"`, is the agent
+ * credential profile: it must pin `meta.vct_values` and ask for `acts_for`,
+ * `scope`, `agent.name` and `agent.operator`. `cnf` stays the holder binding,
+ * not a disclosed claim, and `exp` is reported as `expires_at` rather than asked
+ * for. Any other `profile` value is a start-up error.
  */
 export function parseQueries(json: string): Record<string, QueryDefinition> {
   let parsed: unknown;
@@ -290,11 +301,56 @@ function parseQuery(name: string, definition: unknown): QueryDefinition {
   if (policies !== undefined && !isRecord(policies)) {
     throw new ConfigError(`${where}.policies must be an object when set`);
   }
+  const profile = definition['profile'];
+  if (profile !== undefined && profile !== 'agent') {
+    throw new ConfigError(`${where}.profile must be "agent" when set`);
+  }
+  const agent = name === 'agent' || profile === 'agent';
+  if (agent) {
+    requireAgentProfile(where, credentials as Array<Record<string, unknown>>);
+  }
   const query: QueryDefinition = { dcql_query: dcql as unknown as DcqlQuery };
   if (policies !== undefined) {
     query.policies = policies;
   }
+  if (agent) {
+    query.profile = 'agent';
+  }
   return query;
+}
+
+/**
+ * The agent credential (ADR 0007) is a pinned type, and the result has to carry
+ * who the agent acts for, what it may do, and a label. Those claims are required
+ * at start-up so a misconfigured query fails before a wallet is asked, rather
+ * than as a login that WordPress cannot turn into a token.
+ */
+function requireAgentProfile(where: string, credentials: Array<Record<string, unknown>>): void {
+  const required: Array<{ path: string[]; label: string }> = [
+    { path: ['acts_for'], label: 'acts_for' },
+    { path: ['scope'], label: 'scope' },
+    { path: ['agent', 'name'], label: 'agent.name' },
+    { path: ['agent', 'operator'], label: 'agent.operator' },
+  ];
+  for (const credential of credentials) {
+    const id = String(credential['id']);
+    const meta = credential['meta'];
+    const values = isRecord(meta) && Array.isArray(meta['vct_values']) ? meta['vct_values'] : [];
+    if (values.length === 0 || !values.every((value) => typeof value === 'string' && value !== '')) {
+      throw new ConfigError(`${where}.${id}: an agent query must pin meta.vct_values to one or more agent credential types`);
+    }
+    const claims = credential['claims'];
+    const paths = Array.isArray(claims)
+      ? claims
+          .filter((claim): claim is Record<string, unknown> => isRecord(claim) && Array.isArray(claim['path']))
+          .map((claim) => JSON.stringify(claim['path']))
+      : [];
+    for (const claim of required) {
+      if (!paths.includes(JSON.stringify(claim.path))) {
+        throw new ConfigError(`${where}.${id}: an agent query must ask for ${claim.label} (claim path ${JSON.stringify(claim.path)})`);
+      }
+    }
+  }
 }
 
 /**
