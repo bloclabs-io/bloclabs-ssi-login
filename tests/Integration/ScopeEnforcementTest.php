@@ -24,7 +24,6 @@ final class ScopeEnforcementTest extends IntegrationTestCase {
 		parent::setUp();
 		$this->tokens = new TokenLookupFake();
 		( new BearerAuthentication( Plugin::instance()->settings(), $this->tokens, new ScopeEnforcement() ) )->register();
-		add_filter( 'wp_is_rest_endpoint', '__return_true' );
 		$_SERVER['HTTPS'] = 'on';
 		BearerAuthentication::reset();
 	}
@@ -36,7 +35,8 @@ final class ScopeEnforcementTest extends IntegrationTestCase {
 	}
 
 	/**
-	 * Authenticates the request with a token for the user, as the bearer filter does.
+	 * Authenticates the request with a token for the user, as WordPress runs it:
+	 * the user determined at bootstrap, then the REST server's authentication check.
 	 *
 	 * @param list<string> $scope
 	 */
@@ -44,7 +44,9 @@ final class ScopeEnforcementTest extends IntegrationTestCase {
 		global $current_user;
 		$_SERVER['HTTP_AUTHORIZATION'] = 'Bearer ' . $this->tokens->mint( $user_id, $scope );
 		$current_user                  = null; // phpcs:ignore WordPress.WP.GlobalVariablesOverride.Prohibited -- forces core to determine the user again.
-		$this->assertSame( $user_id, wp_get_current_user()->ID );
+		$this->assertSame( 0, wp_get_current_user()->ID, 'nobody until the REST boundary' );
+		$this->assertTrue( rest_get_server()->check_authentication() );
+		$this->assertSame( $user_id, get_current_user_id() );
 		$this->assertNotNull( BearerAuthentication::current() );
 	}
 
