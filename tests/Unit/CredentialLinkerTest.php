@@ -106,9 +106,8 @@ final class CredentialLinkerTest extends TestCase {
 		$verifier = $this->createMock( VerifierClient::class );
 		$verifier->expects( $this->never() )->method( 'fetch_result' );
 		$finalizer = new \BlocLabs\SsiLogin\Login\LoginFinalizer(
-			$settings,
 			new AttemptRepository(),
-			$verifier,
+			new \BlocLabs\SsiLogin\Login\LoginChecks( new AttemptRepository(), $verifier ),
 			new \BlocLabs\SsiLogin\Identity\UserResolver( $settings, new IdentityRepository() ),
 			new \BlocLabs\SsiLogin\Session\BrowserBinding( $settings )
 		);

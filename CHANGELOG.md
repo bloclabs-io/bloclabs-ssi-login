@@ -2,6 +2,20 @@
 
 ## 0.4.0-dev (unreleased)
 
+- Agent login, token issuance (#90, ADR 0007 follow-up 3/7). The checks every verified attempt passes (the verifier's
+  result against the on-chain commitments, the user against the `wp_authenticate`, `wp_authenticate_user`,
+  `authenticate` and `bloclabs_ssi_allow_login` filters) move from `LoginFinalizer` into `LoginChecks`, shared with
+  the new `TokenIssuer`, which turns a verified agent attempt into an opaque `bssi_` bearer token: the account is the
+  one the credential's `acts_for` names, if it has turned on *Agents may act for this account*, or the one the
+  agent's own key is linked to, and nothing is ever provisioned; the scope is requested ∩ the credential's `scope`
+  ∩ the site's `agent_scopes` (`read`, `content`, plus a site's own through `bloclabs_ssi_agent_scopes`, never an
+  administrative capability); `bloclabs_ssi_agent_token` may narrow or refuse; the lifetime is `agent_token_ttl`
+  bounded by the credential's expiry, which the bridge's result may now report as `expires_at`; the attempt is
+  consumed and the token row written in the same request, so one attestation yields at most one token; no cookie
+  is set and `wp_login` does not fire, `bloclabs_ssi_agent_token_issued` does. Settings `agent_login_enabled` (off),
+  `agent_credential_query`, `agent_token_ttl` and `agent_scopes`. The routes (2/7) and the tokens table (1/7) are
+  separate pull requests, so nothing is reachable yet.
+
 ## 0.3.0 (2026-11-06)
 
 First release. The first end-to-end logins with a real phone wallet (Paradym on iOS) ran on 2026-11-06, same device

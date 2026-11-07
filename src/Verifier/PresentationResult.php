@@ -21,12 +21,15 @@ final class PresentationResult {
 	 * @param string               $subject_id        Stable holder identifier (a DID, or issuer + sub).
 	 * @param string               $presentation_hash SHA-256 of the canonical JSON of the parsed vp_token, 64 lowercase hex characters.
 	 * @param array<string, mixed> $claims            Disclosed claims (only what the query asked for).
+	 * @param int|null             $expires_at        When the credential expires (Unix time), if the bridge reports it;
+	 *                                                an agent token never outlives it (ADR 0007 §4).
 	 */
 	public function __construct(
 		public readonly string $subject_id,
 		public readonly ?string $issuer,
 		public readonly string $presentation_hash,
 		public readonly array $claims,
+		public readonly ?int $expires_at = null,
 	) {}
 
 	/**
@@ -49,6 +52,34 @@ final class PresentationResult {
 			isset( $data['issuer'] ) && is_string( $data['issuer'] ) ? $data['issuer'] : null,
 			$hash,
 			isset( $data['claims'] ) && is_array( $data['claims'] ) ? $data['claims'] : array(),
+			self::expiry( $data['expires_at'] ?? null ),
 		);
+	}
+
+	/**
+	 * The optional `expires_at` of the result route: an RFC 3339 timestamp, as
+	 * the request sends it, or Unix seconds. Absent or null means the bridge
+	 * does not report it; anything else it cannot read is unusable, like a
+	 * malformed presentation hash, since silently ignoring it would let a
+	 * token outlive the credential.
+	 *
+	 * @param mixed $value
+	 */
+	private static function expiry( $value ): ?int {
+		if ( null === $value ) {
+			return null;
+		}
+		if ( is_int( $value ) && $value > 0 ) {
+			return $value;
+		}
+		if ( is_string( $value ) && '' !== trim( $value ) ) {
+			foreach ( array( \DateTimeInterface::RFC3339_EXTENDED, \DateTimeInterface::RFC3339 ) as $format ) {
+				$time = \DateTimeImmutable::createFromFormat( $format, $value, new \DateTimeZone( 'UTC' ) );
+				if ( $time instanceof \DateTimeImmutable ) {
+					return $time->getTimestamp();
+				}
+			}
+		}
+		throw VerifierException::unusable( 'The verifier returned a result with an unreadable expiry.' );
 	}
 }

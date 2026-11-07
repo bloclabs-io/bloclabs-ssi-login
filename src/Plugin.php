@@ -22,6 +22,7 @@ use BlocLabs\SsiLogin\FireFly\EventReconciler;
 use BlocLabs\SsiLogin\FireFly\FireFlyClient;
 use BlocLabs\SsiLogin\Identity\IdentityRepository;
 use BlocLabs\SsiLogin\Identity\UserResolver;
+use BlocLabs\SsiLogin\Login\LoginChecks;
 use BlocLabs\SsiLogin\Login\LoginFinalizer;
 use BlocLabs\SsiLogin\Login\LoginScreen;
 use BlocLabs\SsiLogin\Rest\Routes;
@@ -173,16 +174,21 @@ final class Plugin {
 		);
 	}
 
+	/**
+	 * The checks a verified attempt passes before it becomes a session or a token.
+	 */
+	public function checks(): LoginChecks {
+		return $this->service( LoginChecks::class, fn () => new LoginChecks( $this->attempts(), $this->verifier() ) );
+	}
+
+	public function users(): UserResolver {
+		return $this->service( UserResolver::class, fn () => new UserResolver( $this->settings(), $this->identities() ) );
+	}
+
 	public function finalizer(): LoginFinalizer {
 		return $this->service(
 			LoginFinalizer::class,
-			fn () => new LoginFinalizer(
-				$this->settings(),
-				$this->attempts(),
-				$this->verifier(),
-				new UserResolver( $this->settings(), $this->identities() ),
-				$this->binding()
-			)
+			fn () => new LoginFinalizer( $this->attempts(), $this->checks(), $this->users(), $this->binding() )
 		);
 	}
 

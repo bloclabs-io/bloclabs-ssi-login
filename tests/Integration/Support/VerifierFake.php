@@ -38,6 +38,9 @@ final class VerifierFake implements VerifierClient {
 	 */
 	public ?array $claims = null;
 
+	/** The credential's expiry the next result reports; null for none. */
+	public ?int $expires_at = null;
+
 	public int $creates = 0;
 
 	public int $fetches = 0;
@@ -57,6 +60,7 @@ final class VerifierFake implements VerifierClient {
 		$this->issuer            = null;
 		$this->presentation_hash = null;
 		$this->claims            = null;
+		$this->expires_at        = null;
 		$this->creates           = 0;
 		$this->fetches           = 0;
 		$this->last_request      = null;
@@ -91,7 +95,8 @@ final class VerifierFake implements VerifierClient {
 			$this->subject_id ?? (string) $fixture['subject'],
 			$this->issuer ?? 'did:web:issuer.example',
 			strtolower( (string) ( $this->presentation_hash ?? $fixture['presentation_hash'] ) ),
-			$this->claims ?? array( 'name' => 'Ada' )
+			$this->claims ?? array( 'name' => 'Ada' ),
+			$this->expires_at
 		);
 	}
 }

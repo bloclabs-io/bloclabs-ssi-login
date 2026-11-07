@@ -37,6 +37,8 @@ final class Attempt {
 		public readonly ?int $checked_at,
 		public readonly string $purpose = 'login',
 		public readonly ?int $link_user_id = null,
+		public readonly ?string $tx_ref = null,
+		public readonly ?string $firefly_event_id = null,
 	) {}
 
 	/**
@@ -62,6 +64,8 @@ final class Attempt {
 			$time( $row['checked_at'] ?? null ),
 			(string) ( $row['purpose'] ?? 'login' ),
 			isset( $row['link_user_id'] ) ? (int) $row['link_user_id'] : null,
+			isset( $row['tx_ref'] ) ? (string) $row['tx_ref'] : null,
+			isset( $row['firefly_event_id'] ) ? (string) $row['firefly_event_id'] : null,
 		);
 	}
 
