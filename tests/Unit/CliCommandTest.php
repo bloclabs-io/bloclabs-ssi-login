@@ -77,6 +77,7 @@ final class CliCommandTest extends TestCase {
 			}
 		}
 		$this->assertContains( 'webhook-url', $declared, 'subscribe takes the webhook address as --webhook-url' );
+		$this->assertContains( 'login', $declared, 'links list filters with --login; --user is a WP-CLI global and must not be declared' );
 	}
 
 	public function test_subscribe_sends_the_webhook_url_option_to_firefly(): void {

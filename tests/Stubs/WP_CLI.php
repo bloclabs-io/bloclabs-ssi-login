@@ -32,5 +32,16 @@ if ( ! class_exists( 'WP_CLI' ) ) {
 		public static function error( string $message ): void {
 			throw new RuntimeException( 'Error: ' . esc_html( $message ) );
 		}
+
+		/**
+		 * @param array<string, mixed> $assoc_args
+		 */
+		public static function confirm( string $message, array $assoc_args = array() ): void {
+			self::$lines[] = 'Confirm: ' . $message;
+			$accepted      = ! empty( $assoc_args['yes'] );
+			if ( ! $accepted && ! empty( $GLOBALS['bloclabs_ssi_test_cli_decline'] ) ) {
+				throw new RuntimeException( 'Error: aborted' );
+			}
+		}
 	}
 }

@@ -2,6 +2,8 @@
 
 ## 0.4.0-dev (unreleased)
 
+- An administrator sees linked credentials (issuer and last used) on the Users screen and the user edit screen and can unlink them there. `wp bloclabs-ssi links list` and `wp bloclabs-ssi links unlink` do the same for this site. The list filter is `--login`, because WP-CLI reserves `--user` for the account that runs the command. Neither the screen nor the command prints a subject identifier or the full subject hash. Last used is shown in the site's timezone. On multisite only a network administrator can view or unlink, and the network Users screen skips a site where the plugin has no identity table (#69).
+
 ## 0.3.0 (2026-11-06)
 
 First release. The first end-to-end logins with a real phone wallet (Paradym on iOS) ran on 2026-11-06, same device

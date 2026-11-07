@@ -81,6 +81,52 @@ final class IdentityRepository {
 	}
 
 	/**
+	 * Credential links for an administrator or WP-CLI.
+	 *
+	 * The subject hash is not selected. Callers can show the label, the issuer
+	 * and the dates without a way to print the hash or recover the subject id.
+	 * Pass a user id to limit the rows to that account; omit it for the whole site.
+	 *
+	 * @return list<array{user_id: int, subject_label: string, issuer: string, created_at: string, last_login_at: string}>
+	 */
+	public function links_for( ?int $user_id = null ): array {
+		global $wpdb;
+		$table = Schema::identities_table();
+		if ( null === $user_id ) {
+			$rows = $wpdb->get_results(
+				"SELECT user_id, subject_label, issuer, created_at, last_login_at FROM {$table} ORDER BY user_id ASC, id ASC", // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared
+				ARRAY_A
+			);
+		} else {
+			$rows = $wpdb->get_results(
+				$wpdb->prepare(
+					"SELECT user_id, subject_label, issuer, created_at, last_login_at FROM {$table} WHERE user_id = %d ORDER BY id ASC", // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared
+					$user_id
+				),
+				ARRAY_A
+			);
+		}
+		if ( ! is_array( $rows ) ) {
+			return array();
+		}
+
+		$links = array();
+		foreach ( $rows as $row ) {
+			if ( ! is_array( $row ) ) {
+				continue;
+			}
+			$links[] = array(
+				'user_id'       => (int) $row['user_id'],
+				'subject_label' => (string) ( $row['subject_label'] ?? '' ),
+				'issuer'        => (string) ( $row['issuer'] ?? '' ),
+				'created_at'    => (string) ( $row['created_at'] ?? '' ),
+				'last_login_at' => (string) ( $row['last_login_at'] ?? '' ),
+			);
+		}
+		return $links;
+	}
+
+	/**
 	 * An opaque label for the profile screen: the DID method (or "credential") and
 	 * a short keyed fingerprint. It never contains the identifier, and without the
 	 * subject key it cannot confirm a guessed one.

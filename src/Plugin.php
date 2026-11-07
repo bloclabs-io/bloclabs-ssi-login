@@ -10,6 +10,7 @@ declare(strict_types=1);
 namespace BlocLabs\SsiLogin;
 
 use BlocLabs\SsiLogin\Admin\SettingsPage;
+use BlocLabs\SsiLogin\Admin\UserLinksScreen;
 use BlocLabs\SsiLogin\Assets\AssetManager;
 use BlocLabs\SsiLogin\Cli\Command;
 use BlocLabs\SsiLogin\Config\Settings;
@@ -75,6 +76,10 @@ final class Plugin {
 		if ( is_admin() ) {
 			( new SettingsPage( $this->settings() ) )->register();
 			( new \BlocLabs\SsiLogin\Admin\ProfileScreen( $this ) )->register();
+		}
+
+		if ( is_admin() ) {
+			( new UserLinksScreen( $this->identities() ) )->register();
 		}
 
 		if ( defined( 'WP_CLI' ) && WP_CLI ) {
